@@ -1,0 +1,149 @@
+{
+  "inventory_version": "1.0",
+  "generated_at": "2026-10-03",
+  "corpus": {
+    "file_count": 7,
+    "total_bytes": 9801168,
+    "total_words": 1041124,
+    "total_chunks": 2265,
+    "total_rule_candidates": 15716
+  },
+  "documents": [
+    {
+      "doc_id": "doc_3decec3c7fbb",
+      "file": "Dungeon_Masters_Guide_2024.txt",
+      "title": "Dungeon Master's Guide 2024",
+      "format": "UTF-8 TXT",
+      "language": "en (OCR may contain errors)",
+      "edition": "2024",
+      "bytes": 1876485,
+      "sha256": "e02ccb7886f641e259fc4f9c4a905e78095fbfe38d1e715a6f826f28ad91c744",
+      "lines": 23633,
+      "words": 200402,
+      "estimated_pages": 1,
+      "canonical_candidate": true,
+      "warnings": []
+    },
+    {
+      "doc_id": "doc_f4d58fff3cbb",
+      "file": "Full text of _D& D 5e Dungeon Master Guide 2024_",
+      "title": "Dungeon Master's Guide 2024",
+      "format": "MIME HTML / OCR em <pre>",
+      "language": "en (OCR may contain errors)",
+      "edition": "2024",
+      "bytes": 1554640,
+      "sha256": "4071b5ca0a3e83bbf2d2f386bd82d5d360936035720ee5f66e0f3472c34a81c3",
+      "lines": 41872,
+      "words": 206736,
+      "estimated_pages": 1,
+      "canonical_candidate": false,
+      "warnings": [
+        "arquivo é página HTML arquivada; texto recuperado do <pre>",
+        "OCR/estrutura podem conter erros e ordem de leitura imperfeita",
+        "candidato a duplicata/versão alternativa do mesmo livro"
+      ]
+    },
+    {
+      "doc_id": "doc_575d546e796d",
+      "file": "Full text of _Eberron_ Forge of the Artificer.txt",
+      "title": "Eberron: Forge of the Artificer",
+      "format": "MIME HTML / OCR em <pre>",
+      "language": "en (OCR may contain errors)",
+      "edition": "not explicit",
+      "bytes": 975833,
+      "sha256": "d6e9d28d8fedeed934015e1e050c67fc8b706cb3818c4eb4636480ccd146ddef",
+      "lines": 9653,
+      "words": 59361,
+      "estimated_pages": 1,
+      "canonical_candidate": false,
+      "warnings": [
+        "arquivo é página HTML arquivada; texto recuperado do <pre>",
+        "OCR/estrutura podem conter erros e ordem de leitura imperfeita"
+      ]
+    },
+    {
+      "doc_id": "doc_1e2f733da1bb",
+      "file": "Full text of _Monster Manual 2025.txt",
+      "title": "Monster Manual 2025",
+      "format": "MIME HTML / OCR em <pre>",
+      "language": "en (OCR may contain errors)",
+      "edition": "2025",
+      "bytes": 2546455,
+      "sha256": "b4359a953360a2bd1399009d784b09498168337325f5b6e9388c7d1123137206",
+      "lines": 82381,
+      "words": 179357,
+      "estimated_pages": 1,
+      "canonical_candidate": false,
+      "warnings": [
+        "arquivo é página HTML arquivada; texto recuperado do <pre>",
+        "OCR/estrutura podem conter erros e ordem de leitura imperfeita"
+      ]
+    },
+    {
+      "doc_id": "doc_89ef233c11bb",
+      "file": "Players_Handbook_2024.txt",
+      "title": "Player's Handbook 2024",
+      "format": "UTF-8 TXT",
+      "language": "en (OCR may contain errors)",
+      "edition": "2024",
+      "bytes": 1676501,
+      "sha256": "37c20c3c8050f439aeeaaeb90554368947dc292ebd9a37b6634eece952bf3475",
+      "lines": 20676,
+      "words": 201289,
+      "estimated_pages": 1,
+      "canonical_candidate": true,
+      "warnings": []
+    },
+    {
+      "doc_id": "doc_811f51b3e179",
+      "file": "Ravenloft_by_J_merged.txt",
+      "title": "Van Richten's Guide to Ravenloft",
+      "format": "UTF-8 TXT",
+      "language": "en (OCR may contain errors)",
+      "edition": "not explicit",
+      "bytes": 737425,
+      "sha256": "f443f77c7793cdbf320e27889d510e2f1f8d9f1fc551e45c935e828e77198471",
+      "lines": 1459,
+      "words": 121743,
+      "estimated_pages": 367,
+      "canonical_candidate": false,
+      "warnings": [
+        "livro suplementar/aventura; não é núcleo de regras"
+      ]
+    },
+    {
+      "doc_id": "doc_1859d4406858",
+      "file": "dragon-delves.txt",
+      "title": "Dragon Delves",
+      "format": "UTF-8 TXT",
+      "language": "en (OCR may contain errors)",
+      "edition": "not explicit",
+      "bytes": 433829,
+      "sha256": "b58a276097802cf24dafb736d911900aff0e87492269f7f21d31ea6c308ae54c",
+      "lines": 1202,
+      "words": 72236,
+      "estimated_pages": 299,
+      "canonical_candidate": false,
+      "warnings": [
+        "livro suplementar/aventura; não é núcleo de regras"
+      ]
+    }
+  ],
+  "duplicate_or_conflict_candidates": [
+    {
+      "id": "duplicate_title_001",
+      "type": "same_title_alternate_source",
+      "severity": "medium",
+      "documents": [
+        "doc_3decec3c7fbb",
+        "doc_f4d58fff3cbb"
+      ],
+      "description": "Mais de um arquivo identificado como Dungeon Master's Guide 2024; manter ambos para auditoria de OCR.",
+      "possible_interpretations": [
+        "cópia/extração alternativa da mesma obra",
+        "edição/versão distinta com mesmo título"
+      ],
+      "status": "review"
+    }
+  ]
+}

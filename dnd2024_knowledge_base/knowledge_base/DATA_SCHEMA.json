@@ -1,0 +1,25 @@
+{
+  "version": "1.0",
+  "tables": {
+    "documents": "Metadados e proveniência de cada arquivo",
+    "chunks": "Texto completo preservado em blocos de 80 linhas",
+    "rule_candidates": "Frases normativas detectadas, sempre com evidência e status needs_validation",
+    "entities": "Candidatos de entidades e aparições",
+    "references_": "Referências cruzadas detectadas",
+    "chunks_fts": "Busca FTS5 em chunks"
+  },
+  "rule_statuses": [
+    "needs_validation",
+    "validated",
+    "conflict",
+    "rejected"
+  ],
+  "source_requirements": [
+    "doc_id",
+    "document",
+    "file",
+    "line",
+    "page|null",
+    "section"
+  ]
+}

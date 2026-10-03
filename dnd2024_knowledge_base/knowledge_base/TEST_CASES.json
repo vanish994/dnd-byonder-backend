@@ -1,0 +1,132 @@
+[
+  {
+    "test_id": "combat_template_001",
+    "category": "combat",
+    "status": "template_needs_rule_binding",
+    "scenario": "Caso de teste para combat",
+    "input": {},
+    "expected": null,
+    "source_rule_ids": [],
+    "note": "Preenchimento pendente para evitar inventar valores não extraídos/validados."
+  },
+  {
+    "test_id": "attacks_template_001",
+    "category": "attacks",
+    "status": "template_needs_rule_binding",
+    "scenario": "Caso de teste para attacks",
+    "input": {},
+    "expected": null,
+    "source_rule_ids": [],
+    "note": "Preenchimento pendente para evitar inventar valores não extraídos/validados."
+  },
+  {
+    "test_id": "damage_template_001",
+    "category": "damage",
+    "status": "template_needs_rule_binding",
+    "scenario": "Caso de teste para damage",
+    "input": {},
+    "expected": null,
+    "source_rule_ids": [],
+    "note": "Preenchimento pendente para evitar inventar valores não extraídos/validados."
+  },
+  {
+    "test_id": "checks_template_001",
+    "category": "checks",
+    "status": "template_needs_rule_binding",
+    "scenario": "Caso de teste para checks",
+    "input": {},
+    "expected": null,
+    "source_rule_ids": [],
+    "note": "Preenchimento pendente para evitar inventar valores não extraídos/validados."
+  },
+  {
+    "test_id": "saving_throws_template_001",
+    "category": "saving_throws",
+    "status": "template_needs_rule_binding",
+    "scenario": "Caso de teste para saving_throws",
+    "input": {},
+    "expected": null,
+    "source_rule_ids": [],
+    "note": "Preenchimento pendente para evitar inventar valores não extraídos/validados."
+  },
+  {
+    "test_id": "conditions_template_001",
+    "category": "conditions",
+    "status": "template_needs_rule_binding",
+    "scenario": "Caso de teste para conditions",
+    "input": {},
+    "expected": null,
+    "source_rule_ids": [],
+    "note": "Preenchimento pendente para evitar inventar valores não extraídos/validados."
+  },
+  {
+    "test_id": "advantage_disadvantage_template_001",
+    "category": "advantage_disadvantage",
+    "status": "template_needs_rule_binding",
+    "scenario": "Caso de teste para advantage_disadvantage",
+    "input": {},
+    "expected": null,
+    "source_rule_ids": [],
+    "note": "Preenchimento pendente para evitar inventar valores não extraídos/validados."
+  },
+  {
+    "test_id": "spellcasting_template_001",
+    "category": "spellcasting",
+    "status": "template_needs_rule_binding",
+    "scenario": "Caso de teste para spellcasting",
+    "input": {},
+    "expected": null,
+    "source_rule_ids": [],
+    "note": "Preenchimento pendente para evitar inventar valores não extraídos/validados."
+  },
+  {
+    "test_id": "concentration_template_001",
+    "category": "concentration",
+    "status": "template_needs_rule_binding",
+    "scenario": "Caso de teste para concentration",
+    "input": {},
+    "expected": null,
+    "source_rule_ids": [],
+    "note": "Preenchimento pendente para evitar inventar valores não extraídos/validados."
+  },
+  {
+    "test_id": "movement_template_001",
+    "category": "movement",
+    "status": "template_needs_rule_binding",
+    "scenario": "Caso de teste para movement",
+    "input": {},
+    "expected": null,
+    "source_rule_ids": [],
+    "note": "Preenchimento pendente para evitar inventar valores não extraídos/validados."
+  },
+  {
+    "test_id": "rest_template_001",
+    "category": "rest",
+    "status": "template_needs_rule_binding",
+    "scenario": "Caso de teste para rest",
+    "input": {},
+    "expected": null,
+    "source_rule_ids": [],
+    "note": "Preenchimento pendente para evitar inventar valores não extraídos/validados."
+  },
+  {
+    "test_id": "death_template_001",
+    "category": "death",
+    "status": "template_needs_rule_binding",
+    "scenario": "Caso de teste para death",
+    "input": {},
+    "expected": null,
+    "source_rule_ids": [],
+    "note": "Preenchimento pendente para evitar inventar valores não extraídos/validados."
+  },
+  {
+    "test_id": "leveling_template_001",
+    "category": "leveling",
+    "status": "template_needs_rule_binding",
+    "scenario": "Caso de teste para leveling",
+    "input": {},
+    "expected": null,
+    "source_rule_ids": [],
+    "note": "Preenchimento pendente para evitar inventar valores não extraídos/validados."
+  }
+]
