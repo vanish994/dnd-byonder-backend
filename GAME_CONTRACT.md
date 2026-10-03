@@ -8,6 +8,8 @@
 
 O narrador nunca deve receber a responsabilidade de calcular uma ação.
 
+O endpoint `/v1/dice/roll` gera faces de dados e totais, mas não resolve uma ação. O cliente não deve transformar uma rolagem bruta em sucesso, fracasso, dano ou condição sem uma mecânica validada.
+
 ## Payload recomendado para o Mimo
 
 ```json
@@ -47,6 +49,8 @@ Quando ainda não foi resolvida:
 
 O endpoint atual `/v1/resolve` retorna `needs_rule_validation` porque a base possui candidatos de regra, não um conjunto integral de mecânicas validadas. Esse estado deve ser convertido para `FATOS_RESOLVIDOS: {}` e nunca para sucesso/fracasso.
 
+O endpoint `/v1/dice/roll` é limitado a rolagens independentes. A busca de regras usa somente fontes classificadas como 2024/2025 e, entre fontes duplicadas, prefere a candidata canônica.
+
 ## Fontes permitidas
 
-Esta instalação contém o *Player’s Handbook 2024 / 5.5*, o *Dungeon Master’s Guide 2024 / 5.5*, o *Monster Manual 2025* e os suplementos presentes no inventário. A edição de 2014 foi excluída.
+A busca usa somente fontes identificadas como 2024 ou 2025: o *Player’s Handbook 2024 / 5.5*, a fonte canônica do *Dungeon Master’s Guide 2024 / 5.5* e o *Monster Manual 2025*. Suplementos sem edição explícita e a extração alternativa do DMG permanecem no arquivo para auditoria, mas não são retornados pela busca. A edição de 2014 foi excluída.

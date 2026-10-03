@@ -2,9 +2,12 @@ import os
 import re
 import sqlite3
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from fastapi import FastAPI, Header, HTTPException, Query
 from pydantic import BaseModel, Field
+
+from rule_engine.dice import DiceExpressionError, roll_dice
+from rule_engine.source_policy import STRICT_EDITION_SCOPE, append_strict_source_policy
 
 DB_PATH = Path(os.getenv('RULES_DB_PATH', Path(__file__).resolve().parent.parent / 'dnd2024_knowledge_base' / 'knowledge_base' / 'dnd_rules.db'))
 API_KEY = os.getenv('RULE_ENGINE_API_KEY', '').strip()
@@ -20,6 +23,10 @@ class ResolveRequest(BaseModel):
     action: str = Field(min_length=1, max_length=200)
     state: dict[str, Any] = Field(default_factory=dict)
     rule_ids: list[str] = Field(default_factory=list)
+
+class DiceRollRequest(BaseModel):
+    expression: str = Field(min_length=1, max_length=50)
+    mode: Literal['normal', 'advantage', 'disadvantage'] = 'normal'
 
 
 def authorize(x_api_key: str | None):
@@ -45,6 +52,7 @@ def fts_query(text: str) -> str:
 
 def serialize(row):
     return {
+        'source_id': row['doc_id'], 'edition': row['edition'],
         'chunk_id': row['chunk_id'], 'title': row['title'], 'section': row['section'],
         'page': row['page'], 'line_start': row['line_start'], 'line_end': row['line_end'],
         'text': row['text'],
@@ -58,25 +66,43 @@ def health():
         chunks = con.execute('SELECT count(*) FROM chunks').fetchone()[0]
     finally:
         con.close()
-    return {'status': 'ok', 'edition_scope': ['2024', '2025', 'supplements_without_explicit_edition'], 'documents': documents, 'chunks': chunks}
+    return {
+        'status': 'ok',
+        'edition_scope': list(STRICT_EDITION_SCOPE),
+        'source_policy': 'explicit 2024/2025 only; canonical source preferred for duplicate titles',
+        'documents': documents,
+        'chunks': chunks,
+    }
+
+@app.post('/v1/dice/roll')
+def dice_roll(body: DiceRollRequest, x_api_key: str | None = Header(default=None)):
+    authorize(x_api_key)
+    try:
+        return roll_dice(body.expression, body.mode)
+    except DiceExpressionError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 @app.post('/v1/rules/search')
 def search(body: SearchRequest, x_api_key: str | None = Header(default=None)):
     authorize(x_api_key)
     con = connect()
     try:
-        sql = '''SELECT c.chunk_id, c.title, c.section, c.page, c.line_start, c.line_end, c.text
+        sql = '''SELECT d.doc_id, d.edition, c.chunk_id, c.title, c.section, c.page, c.line_start, c.line_end, c.text
                  FROM chunks_fts f JOIN chunks c ON c.rowid=f.rowid
                  JOIN documents d ON d.doc_id=c.doc_id
                  WHERE chunks_fts MATCH ?'''
         args: list[Any] = [fts_query(body.query)]
-        if body.edition:
-            sql += ' AND d.edition = ?'; args.append(body.edition)
+        sql, args = append_strict_source_policy(sql, args, body.edition)
         if body.document:
             sql += ' AND c.title LIKE ?'; args.append('%' + body.document + '%')
         sql += ' LIMIT ?'; args.append(body.limit)
         rows = con.execute(sql, args).fetchall()
-        return {'query': body.query, 'count': len(rows), 'results': [serialize(r) for r in rows], 'source_policy': 'evidence only; candidate rules require validation'}
+        return {
+            'query': body.query,
+            'count': len(rows),
+            'results': [serialize(r) for r in rows],
+            'source_policy': 'explicit 2024/2025 only; canonical source preferred for duplicate titles; candidates require validation',
+        }
     finally:
         con.close()
 

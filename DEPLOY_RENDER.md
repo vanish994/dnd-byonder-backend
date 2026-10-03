@@ -16,6 +16,10 @@ curl -X POST https://SEU-RULE-ENGINE.onrender.com/v1/rules/search \
   -H 'Content-Type: application/json' \
   -H 'X-API-Key: SUA_RULE_ENGINE_API_KEY' \
   -d '{"query":"concentration advantage","limit":3}'
+curl -X POST https://SEU-RULE-ENGINE.onrender.com/v1/dice/roll \
+  -H 'Content-Type: application/json' \
+  -H 'X-API-Key: SUA_RULE_ENGINE_API_KEY' \
+  -d '{"expression":"1d20+5","mode":"advantage"}'
 ```
 
 ## 2. Proxy Mimo / narrador
