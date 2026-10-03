@@ -3,6 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
+from uuid import UUID
 
 from fastapi import HTTPException
 from pydantic import ValidationError
@@ -117,23 +118,25 @@ class RuleEngineApiTests(unittest.TestCase):
         result = api.resolve_request(body, randbelow=self.randbelow_for(14))
 
         expected = {
+            "schema_version": "rule-resolution-v1",
+            "resolution_id": result["resolution_id"],
             "status": "resolved",
             "action": {"type": "ability_check", "ability": "strength"},
-            "check": {"dc": 15, "modifier": 3},
+            "check": {"ability": "strength", "dc": 15, "modifier": 3},
             "rolls": [{"type": "d20", "result": 14}],
             "outcome": {"total": 17, "success": True},
-            "rule_id": api.ABILITY_CHECK_RULE_ID,
+            "rules_used": ["ability_check.mvp.v1"],
         }
-        self.assertEqual({key: result[key] for key in expected}, expected)
-        self.assertEqual(result["facts_resolvidos"], expected)
-        self.assertNotIn("damage", result)
-        self.assertNotIn("conditions_applied", result)
+        self.assertEqual(result, expected)
+        self.assertEqual(str(UUID(result["resolution_id"])), result["resolution_id"])
+        self.assertNotIn("facts_resolvidos", result)
 
     def test_resolve_endpoint_dispatches_structured_check_and_authorizes(self):
         body = self.ability_check(dc=15, modifier=3)
         with patch.object(api, "roll_dice", return_value={"rolls": [14]}) as roll:
             result = api.resolve(body, "test-secret")
 
+        self.assertEqual(result["schema_version"], "rule-resolution-v1")
         self.assertEqual(result["status"], "resolved")
         self.assertEqual(result["outcome"], {"total": 17, "success": True})
         roll.assert_called_once_with("d20", randbelow=None)
@@ -142,16 +145,25 @@ class RuleEngineApiTests(unittest.TestCase):
         self.assertEqual(raised.exception.status_code, 401)
 
     def test_ability_check_fails_below_dc_and_succeeds_at_exact_dc(self):
-        below = api.resolve_explicit_action(self.ability_check(dc=15, modifier=3), randbelow=self.randbelow_for(11))
-        equal = api.resolve_request(self.ability_check(dc=15, modifier=3), randbelow=self.randbelow_for(12))
+        below = api.resolve_explicit_action(
+            self.ability_check(dc=15, modifier=3), randbelow=self.randbelow_for(5)
+        )
+        equal = api.resolve_request(
+            self.ability_check(dc=15, modifier=3), randbelow=self.randbelow_for(12)
+        )
 
-        self.assertEqual(below["outcome"], {"total": 14, "success": False})
+        self.assertEqual(below["schema_version"], "rule-resolution-v1")
+        self.assertEqual(below["outcome"], {"total": 8, "success": False})
         self.assertEqual(equal["outcome"], {"total": 15, "success": True})
 
     def test_ability_check_supports_negative_modifier(self):
-        result = api.resolve_explicit_action(self.ability_check(dc=10, modifier=-2), randbelow=self.randbelow_for(11))
+        result = api.resolve_explicit_action(
+            self.ability_check(dc=10, modifier=-2), randbelow=self.randbelow_for(11)
+        )
 
-        self.assertEqual(result["check"]["modifier"], -2)
+        self.assertEqual(
+            result["check"], {"ability": "strength", "dc": 10, "modifier": -2}
+        )
         self.assertEqual(result["outcome"], {"total": 9, "success": False})
 
     def test_ability_check_rng_is_injected_and_repeatable(self):
@@ -159,8 +171,11 @@ class RuleEngineApiTests(unittest.TestCase):
         first = api.resolve_explicit_action(body, randbelow=self.randbelow_for(20))
         second = api.resolve_explicit_action(body, randbelow=self.randbelow_for(20))
 
-        self.assertEqual(first, second)
+        self.assertNotEqual(first["resolution_id"], second["resolution_id"])
         self.assertEqual(first["rolls"], [{"type": "d20", "result": 20}])
+        self.assertEqual(first["rolls"], second["rolls"])
+        self.assertEqual(first["outcome"], second["outcome"])
+        self.assertEqual(len(first["rolls"]), 1)
 
     def test_invalid_or_incomplete_ability_checks_fail_request_validation(self):
         invalid_actions = [
@@ -171,8 +186,19 @@ class RuleEngineApiTests(unittest.TestCase):
             {"type": "ability_check", "ability": "athletics", "dc": 12, "modifier": 2},
             {"type": "ability_check", "ability": "strength", "dc": 0, "modifier": 2},
             {"type": "ability_check", "ability": "strength", "dc": "12", "modifier": 2},
-            {"type": "ability_check", "ability": "strength", "dc": 12, "modifier": True},
-            {"type": "ability_check", "ability": "strength", "dc": 12, "modifier": 2, "advantage": True},
+            {
+                "type": "ability_check",
+                "ability": "strength",
+                "dc": 12,
+                "modifier": True,
+            },
+            {
+                "type": "ability_check",
+                "ability": "strength",
+                "dc": 12,
+                "modifier": 2,
+                "advantage": True,
+            },
         ]
         for action in invalid_actions:
             with self.subTest(action=action), self.assertRaises(ValidationError):
@@ -184,8 +210,9 @@ class RuleEngineApiTests(unittest.TestCase):
             randbelow=self.randbelow_for(20),
         )
 
+        self.assertEqual(result["schema_version"], "rule-resolution-v1")
         self.assertEqual(result["status"], "needs_rule_validation")
-        self.assertEqual(result["facts_resolvidos"], {})
+        self.assertEqual(set(result), {"schema_version", "status", "reason"})
 
     def test_resolution_does_not_mutate_request_state(self):
         body = self.ability_check()
