@@ -1,0 +1,28 @@
+{
+  "checks": {
+    "all_source_files_recovered": true,
+    "all_chunks_have_source": true,
+    "all_candidates_have_id": true,
+    "all_candidates_have_source": true,
+    "no_invented_pages": true,
+    "fts5_created": true
+  },
+  "counts": {
+    "documents": 7,
+    "chunks": 2265,
+    "rule_candidates": 15716,
+    "entities": 25,
+    "references": 6521,
+    "conflict_candidates": 2,
+    "candidates_without_page_marker": 19835,
+    "excluded_2014_sources": 1
+  },
+  "limitations": [
+    "OCR pode conter erros; candidatos devem ser validados contra a página original",
+    "as regras não foram automaticamente marcadas como validadas",
+    "templates de teste aguardam ligação a regras verificadas",
+    "suplementos e aventuras foram preservados, mas não tratados como regras nucleares",
+    "pares com mesmo título foram registrados como duplicatas de proveniência, mesmo quando a similaridade OCR não foi suficiente para fusão automática",
+    "A fonte Player’s Handbook 2014 foi excluída integralmente a pedido do usuário."
+  ]
+}
