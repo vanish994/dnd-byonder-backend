@@ -2,9 +2,12 @@ import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
+
+from fastapi import HTTPException
+from pydantic import ValidationError
 
 import rule_engine.app as api
-from fastapi import HTTPException
 
 
 class RuleEngineApiTests(unittest.TestCase):
@@ -93,6 +96,105 @@ class RuleEngineApiTests(unittest.TestCase):
         result = api.health()
         self.assertEqual(result["edition_scope"], ["2024", "2025"])
         self.assertEqual(result["documents"], 6)
+
+    @staticmethod
+    def ability_check(*, dc=15, modifier=3, ability="strength"):
+        return api.ResolveRequest(
+            action={
+                "type": "ability_check",
+                "ability": ability,
+                "dc": dc,
+                "modifier": modifier,
+            }
+        )
+
+    @staticmethod
+    def randbelow_for(d20_result):
+        return lambda upper_bound: d20_result - 1
+
+    def test_explicit_ability_check_resolves_success_with_expected_contract(self):
+        body = self.ability_check(dc=15, modifier=3)
+        result = api.resolve_request(body, randbelow=self.randbelow_for(14))
+
+        expected = {
+            "status": "resolved",
+            "action": {"type": "ability_check", "ability": "strength"},
+            "check": {"dc": 15, "modifier": 3},
+            "rolls": [{"type": "d20", "result": 14}],
+            "outcome": {"total": 17, "success": True},
+            "rule_id": api.ABILITY_CHECK_RULE_ID,
+        }
+        self.assertEqual({key: result[key] for key in expected}, expected)
+        self.assertEqual(result["facts_resolvidos"], expected)
+        self.assertNotIn("damage", result)
+        self.assertNotIn("conditions_applied", result)
+
+    def test_resolve_endpoint_dispatches_structured_check_and_authorizes(self):
+        body = self.ability_check(dc=15, modifier=3)
+        with patch.object(api, "roll_dice", return_value={"rolls": [14]}) as roll:
+            result = api.resolve(body, "test-secret")
+
+        self.assertEqual(result["status"], "resolved")
+        self.assertEqual(result["outcome"], {"total": 17, "success": True})
+        roll.assert_called_once_with("d20", randbelow=None)
+        with self.assertRaises(HTTPException) as raised:
+            api.resolve(body, "wrong-secret")
+        self.assertEqual(raised.exception.status_code, 401)
+
+    def test_ability_check_fails_below_dc_and_succeeds_at_exact_dc(self):
+        below = api.resolve_explicit_action(self.ability_check(dc=15, modifier=3), randbelow=self.randbelow_for(11))
+        equal = api.resolve_request(self.ability_check(dc=15, modifier=3), randbelow=self.randbelow_for(12))
+
+        self.assertEqual(below["outcome"], {"total": 14, "success": False})
+        self.assertEqual(equal["outcome"], {"total": 15, "success": True})
+
+    def test_ability_check_supports_negative_modifier(self):
+        result = api.resolve_explicit_action(self.ability_check(dc=10, modifier=-2), randbelow=self.randbelow_for(11))
+
+        self.assertEqual(result["check"]["modifier"], -2)
+        self.assertEqual(result["outcome"], {"total": 9, "success": False})
+
+    def test_ability_check_rng_is_injected_and_repeatable(self):
+        body = self.ability_check()
+        first = api.resolve_explicit_action(body, randbelow=self.randbelow_for(20))
+        second = api.resolve_explicit_action(body, randbelow=self.randbelow_for(20))
+
+        self.assertEqual(first, second)
+        self.assertEqual(first["rolls"], [{"type": "d20", "result": 20}])
+
+    def test_invalid_or_incomplete_ability_checks_fail_request_validation(self):
+        invalid_actions = [
+            {"type": "ability_check", "ability": "strength", "modifier": 2},
+            {"type": "ability_check", "ability": "strength", "dc": 12},
+            {"type": "ability_check", "dc": 12, "modifier": 2},
+            {"type": "saving_throw", "ability": "strength", "dc": 12, "modifier": 2},
+            {"type": "ability_check", "ability": "athletics", "dc": 12, "modifier": 2},
+            {"type": "ability_check", "ability": "strength", "dc": 0, "modifier": 2},
+            {"type": "ability_check", "ability": "strength", "dc": "12", "modifier": 2},
+            {"type": "ability_check", "ability": "strength", "dc": 12, "modifier": True},
+            {"type": "ability_check", "ability": "strength", "dc": 12, "modifier": 2, "advantage": True},
+        ]
+        for action in invalid_actions:
+            with self.subTest(action=action), self.assertRaises(ValidationError):
+                api.ResolveRequest(action=action)
+
+    def test_free_text_is_never_interpreted_as_an_ability_check(self):
+        result = api.resolve_request(
+            api.ResolveRequest(action="quero fazer um teste de Força CD 15"),
+            randbelow=self.randbelow_for(20),
+        )
+
+        self.assertEqual(result["status"], "needs_rule_validation")
+        self.assertEqual(result["facts_resolvidos"], {})
+
+    def test_resolution_does_not_mutate_request_state(self):
+        body = self.ability_check()
+        body.state = {"hp": 12, "conditions": []}
+        original_state = {"hp": 12, "conditions": []}
+
+        api.resolve_request(body, randbelow=self.randbelow_for(14))
+
+        self.assertEqual(body.state, original_state)
 
 
 if __name__ == "__main__":
