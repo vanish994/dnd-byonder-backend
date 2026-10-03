@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: dnd-2024-rule-engine
+    runtime: docker
+    dockerfilePath: ./Dockerfile.rule-engine
+    healthCheckPath: /health
+    envVars:
+      - key: RULE_ENGINE_API_KEY
+        generateValue: true

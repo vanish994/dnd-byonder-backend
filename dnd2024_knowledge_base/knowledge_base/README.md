@@ -1,6 +1,6 @@
 # D&D 2024 — base de conhecimento estruturada
 
-Gerada em 2026-10-03 a partir de 8 arquivos fornecidos pelo usuário.
+Gerada em 2026-10-03 a partir das fontes permitidas do corpus fornecido.
 
 ## Entregáveis
 
@@ -36,4 +36,4 @@ Validar candidatos contra o documento canônico, preencher `category`, transform
 
 ## Escopo de edição
 
-A fonte **Player’s Handbook 2014 foi excluída integralmente**. Esta entrega não contém texto, chunks, regras candidatas ou referências provenientes dessa edição.
+A entrega contém somente as fontes permitidas do corpus; versões fora do escopo não são indexadas.
