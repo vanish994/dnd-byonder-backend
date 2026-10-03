@@ -1,6 +1,7 @@
 import os
 import re
 import sqlite3
+import uuid
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Literal
@@ -21,6 +22,7 @@ API_KEY = os.getenv('RULE_ENGINE_API_KEY', '').strip()
 app = FastAPI(title='D&D 2024 Rule Knowledge API', version='0.1.0')
 
 ABILITY_CHECK_RULE_ID = 'ability_check.mvp.v1'
+RULE_RESOLUTION_SCHEMA_VERSION = 'rule-resolution-v1'
 TextAction = constr(strict=True, min_length=1, max_length=200)
 
 
@@ -165,11 +167,9 @@ def resolve_request(
 
     # Text-only and unsupported actions remain fail-closed; KB candidates are evidence, not executable rules.
     return {
+        'schema_version': RULE_RESOLUTION_SCHEMA_VERSION,
         'status': 'needs_rule_validation',
-        'action': body.action,
-        'facts_resolvidos': {},
         'reason': 'No deterministic resolution was emitted because the requested rule has not been bound to a validated mechanic.',
-        'next_step': 'Search the rule knowledge base, validate the source, then add an explicit resolver/test before resolving this action.',
     }
 
 
@@ -186,12 +186,17 @@ def resolve_explicit_action(
     roll = roll_dice('d20', randbelow=randbelow)
     d20_result = roll['rolls'][0]
     total = d20_result + action.modifier
-    resolution = {
+    return {
+        'schema_version': RULE_RESOLUTION_SCHEMA_VERSION,
+        'resolution_id': str(uuid.uuid4()),
         'status': 'resolved',
         'action': {'type': action.type, 'ability': action.ability},
-        'check': {'dc': action.dc, 'modifier': action.modifier},
+        'check': {
+            'ability': action.ability,
+            'dc': action.dc,
+            'modifier': action.modifier,
+        },
         'rolls': [{'type': 'd20', 'result': d20_result}],
         'outcome': {'total': total, 'success': total >= action.dc},
-        'rule_id': ABILITY_CHECK_RULE_ID,
+        'rules_used': [ABILITY_CHECK_RULE_ID],
     }
-    return {**resolution, 'facts_resolvidos': resolution}

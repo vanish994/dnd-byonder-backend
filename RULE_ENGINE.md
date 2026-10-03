@@ -1,6 +1,6 @@
 # D&D 2024 Rule Engine API
 
-Este serviço fornece busca de evidências nas fontes classificadas como 2024/2025 e rolagem de dados bruta. Ele não decide sucesso, fracasso, dano ou efeitos de jogo.
+Este serviço fornece busca de evidências nas fontes classificadas como 2024/2025, rolagem de dados bruta e um resolver explícito para `ability_check.mvp.v1`. O endpoint de resolução emite os fatos mecânicos desse único caso; a busca não promove candidatos a regras executáveis.
 
 ## Endpoints
 
@@ -8,7 +8,9 @@ Este serviço fornece busca de evidências nas fontes classificadas como 2024/20
 - `POST /v1/rules/search` — `{ "query": "concentration advantage", "limit": 8 }`.
 - `GET /v1/rules/context?q=concentration%20advantage&limit=8`.
 - `POST /v1/dice/roll` — rola dados, por exemplo `{ "expression": "1d20+5", "mode": "advantage" }`.
-- `POST /v1/resolve` — atualmente falha de forma segura com `needs_rule_validation`; não inventa resolução mecânica.
+- `POST /v1/resolve` — aceita texto livre (fail-closed com `needs_rule_validation`) ou o `ability_check` estruturado suportado; respostas são serializadas como `rule-resolution-v1`.
+
+Para um ability check explícito válido, a resposta usa `schema_version`, `resolution_id`, `status`, `action`, `check`, `rolls`, `outcome` e `rules_used`. Não duplica os fatos em um campo `facts_resolvidos`; os campos do envelope são a fonte única do resultado.
 
 ## Escopo estrito de fontes
 

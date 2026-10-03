@@ -47,7 +47,7 @@ Quando ainda não foi resolvida:
 
 ## Regra de falha segura
 
-O endpoint atual `/v1/resolve` retorna `needs_rule_validation` porque a base possui candidatos de regra, não um conjunto integral de mecânicas validadas. Esse estado deve ser convertido para `FATOS_RESOLVIDOS: {}` e nunca para sucesso/fracasso.
+O endpoint `/v1/resolve` resolve somente o `ability_check.mvp.v1` quando a ação já chega explicitamente estruturada; a resposta segue `rule-resolution-v1`. Texto livre permanece `needs_rule_validation` e deve ser convertido para `FATOS_RESOLVIDOS: {}`; payloads estruturados fora do schema aceito continuam rejeitados pela validação. Nenhum desses caminhos vira sucesso/fracasso. Candidatos da base de conhecimento não são promovidos automaticamente a regras executáveis.
 
 O endpoint `/v1/dice/roll` é limitado a rolagens independentes. A busca de regras usa somente fontes classificadas como 2024/2025 e, entre fontes duplicadas, prefere a candidata canônica.
 
