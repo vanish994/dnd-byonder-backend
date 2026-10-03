@@ -1,17 +1,28 @@
 import os
 import re
 import sqlite3
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Literal
-from fastapi import FastAPI, Header, HTTPException, Query
-from pydantic import BaseModel, Field
 
-from rule_engine.dice import DiceExpressionError, roll_dice
+from fastapi import FastAPI, Header, HTTPException, Query
+from pydantic import BaseModel, Field, StrictInt, constr
+
+from rule_engine.dice import MAX_MODIFIER, DiceExpressionError, roll_dice
 from rule_engine.source_policy import STRICT_EDITION_SCOPE, append_strict_source_policy
 
-DB_PATH = Path(os.getenv('RULES_DB_PATH', Path(__file__).resolve().parent.parent / 'dnd2024_knowledge_base' / 'knowledge_base' / 'dnd_rules.db'))
+DB_PATH = Path(
+    os.getenv(
+        'RULES_DB_PATH',
+        Path(__file__).resolve().parent.parent / 'dnd2024_knowledge_base' / 'knowledge_base' / 'dnd_rules.db',
+    )
+)
 API_KEY = os.getenv('RULE_ENGINE_API_KEY', '').strip()
 app = FastAPI(title='D&D 2024 Rule Knowledge API', version='0.1.0')
+
+ABILITY_CHECK_RULE_ID = 'ability_check.mvp.v1'
+TextAction = constr(strict=True, min_length=1, max_length=200)
+
 
 class SearchRequest(BaseModel):
     query: str = Field(min_length=2, max_length=500)
@@ -19,10 +30,22 @@ class SearchRequest(BaseModel):
     edition: str | None = None
     document: str | None = None
 
+
+class AbilityCheckAction(BaseModel):
+    type: Literal['ability_check']
+    ability: Literal['strength', 'dexterity', 'constitution', 'intelligence', 'wisdom', 'charisma']
+    dc: StrictInt = Field(ge=1)
+    modifier: StrictInt = Field(ge=-MAX_MODIFIER, le=MAX_MODIFIER)
+
+    class Config:
+        extra = 'forbid'
+
+
 class ResolveRequest(BaseModel):
-    action: str = Field(min_length=1, max_length=200)
+    action: TextAction | AbilityCheckAction
     state: dict[str, Any] = Field(default_factory=dict)
     rule_ids: list[str] = Field(default_factory=list)
+
 
 class DiceRollRequest(BaseModel):
     expression: str = Field(min_length=1, max_length=50)
@@ -44,7 +67,7 @@ def connect():
 
 def fts_query(text: str) -> str:
     # Treat input as search terms, never as raw FTS5 syntax.
-    terms = re.findall(r"[\wÀ-ÿ]+", text.lower())
+    terms = re.findall(r'[\wÀ-ÿ]+', text.lower())
     if not terms:
         raise HTTPException(status_code=400, detail='query has no searchable terms')
     return ' AND '.join('"' + t.replace('"', '') + '"' for t in terms[:16])
@@ -52,11 +75,17 @@ def fts_query(text: str) -> str:
 
 def serialize(row):
     return {
-        'source_id': row['doc_id'], 'edition': row['edition'],
-        'chunk_id': row['chunk_id'], 'title': row['title'], 'section': row['section'],
-        'page': row['page'], 'line_start': row['line_start'], 'line_end': row['line_end'],
+        'source_id': row['doc_id'],
+        'edition': row['edition'],
+        'chunk_id': row['chunk_id'],
+        'title': row['title'],
+        'section': row['section'],
+        'page': row['page'],
+        'line_start': row['line_start'],
+        'line_end': row['line_end'],
         'text': row['text'],
     }
+
 
 @app.get('/health')
 def health():
@@ -74,6 +103,7 @@ def health():
         'chunks': chunks,
     }
 
+
 @app.post('/v1/dice/roll')
 def dice_roll(body: DiceRollRequest, x_api_key: str | None = Header(default=None)):
     authorize(x_api_key)
@@ -82,20 +112,23 @@ def dice_roll(body: DiceRollRequest, x_api_key: str | None = Header(default=None
     except DiceExpressionError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+
 @app.post('/v1/rules/search')
 def search(body: SearchRequest, x_api_key: str | None = Header(default=None)):
     authorize(x_api_key)
     con = connect()
     try:
-        sql = '''SELECT d.doc_id, d.edition, c.chunk_id, c.title, c.section, c.page, c.line_start, c.line_end, c.text
+        sql = """SELECT d.doc_id, d.edition, c.chunk_id, c.title, c.section, c.page, c.line_start, c.line_end, c.text
                  FROM chunks_fts f JOIN chunks c ON c.rowid=f.rowid
                  JOIN documents d ON d.doc_id=c.doc_id
-                 WHERE chunks_fts MATCH ?'''
+                 WHERE chunks_fts MATCH ?"""
         args: list[Any] = [fts_query(body.query)]
         sql, args = append_strict_source_policy(sql, args, body.edition)
         if body.document:
-            sql += ' AND c.title LIKE ?'; args.append('%' + body.document + '%')
-        sql += ' LIMIT ?'; args.append(body.limit)
+            sql += ' AND c.title LIKE ?'
+            args.append('%' + body.document + '%')
+        sql += ' LIMIT ?'
+        args.append(body.limit)
         rows = con.execute(sql, args).fetchall()
         return {
             'query': body.query,
@@ -106,18 +139,59 @@ def search(body: SearchRequest, x_api_key: str | None = Header(default=None)):
     finally:
         con.close()
 
+
 @app.get('/v1/rules/context')
-def context(q: str = Query(min_length=2, max_length=500), limit: int = Query(default=8, ge=1, le=30), x_api_key: str | None = Header(default=None)):
+def context(
+    q: str = Query(min_length=2, max_length=500),
+    limit: int = Query(default=8, ge=1, le=30),
+    x_api_key: str | None = Header(default=None),
+):
     return search(SearchRequest(query=q, limit=limit), x_api_key)
+
 
 @app.post('/v1/resolve')
 def resolve(body: ResolveRequest, x_api_key: str | None = Header(default=None)):
     authorize(x_api_key)
-    # Deliberately fail closed: the current corpus contains candidate rules, not a fully validated executable engine.
+    return resolve_request(body)
+
+
+def resolve_request(
+    body: ResolveRequest,
+    *,
+    randbelow: Callable[[int], int] | None = None,
+):
+    if isinstance(body.action, AbilityCheckAction):
+        return resolve_explicit_action(body, randbelow=randbelow)
+
+    # Text-only and unsupported actions remain fail-closed; KB candidates are evidence, not executable rules.
     return {
         'status': 'needs_rule_validation',
         'action': body.action,
         'facts_resolvidos': {},
         'reason': 'No deterministic resolution was emitted because the requested rule has not been bound to a validated mechanic.',
-        'next_step': 'Search the rule knowledge base, validate the source, then add an explicit resolver/test before resolving this action.'
+        'next_step': 'Search the rule knowledge base, validate the source, then add an explicit resolver/test before resolving this action.',
     }
+
+
+def resolve_explicit_action(
+    body: ResolveRequest,
+    *,
+    randbelow: Callable[[int], int] | None = None,
+):
+    """Resolve the supported explicit ability-check MVP without consulting KB candidates."""
+    action = body.action
+    if not isinstance(action, AbilityCheckAction):
+        raise TypeError('resolve_explicit_action requires a validated ability_check action')
+
+    roll = roll_dice('d20', randbelow=randbelow)
+    d20_result = roll['rolls'][0]
+    total = d20_result + action.modifier
+    resolution = {
+        'status': 'resolved',
+        'action': {'type': action.type, 'ability': action.ability},
+        'check': {'dc': action.dc, 'modifier': action.modifier},
+        'rolls': [{'type': 'd20', 'result': d20_result}],
+        'outcome': {'total': total, 'success': total >= action.dc},
+        'rule_id': ABILITY_CHECK_RULE_ID,
+    }
+    return {**resolution, 'facts_resolvidos': resolution}
