@@ -19,6 +19,12 @@ from game.orchestrator import (
     RuleResolutionError,
 )
 from rule_engine.dice import MAX_MODIFIER, DiceExpressionError, roll_dice
+from rule_engine.character import (
+    SKILL_TO_ABILITY,
+    Character,
+    character_to_state,
+    derive_character,
+)
 from rule_engine.source_policy import STRICT_EDITION_SCOPE, append_strict_source_policy
 from services.gemini_narrator import GeminiNarratorClient
 from services.mimo_narrator import MimoNarratorClient
@@ -47,6 +53,14 @@ ATTACK_ROLL_RULE_ID = 'attack_roll.mvp.v1'
 ATTACK_DAMAGE_RULE_ID = 'attack_damage.mvp.v1'
 INITIATIVE_RULE_ID = 'initiative.mvp.v1'
 COMBAT_RULE_ID = 'combat.mvp.v1'
+ABILITY_MODIFIER_RULE_ID = 'ability_modifier.v1'
+PROFICIENCY_BONUS_RULE_ID = 'proficiency_bonus.v1'
+SKILL_CHECK_RULE_ID = 'skill_check.v1'
+SAVING_THROW_DERIVED_RULE_ID = 'saving_throw.v1'
+UNARMORED_AC_RULE_ID = 'unarmored_ac.v1'
+WEAPON_ATTACK_RULE_ID = 'weapon_attack.v1'
+WEAPON_DAMAGE_RULE_ID = 'weapon_damage.v1'
+CHARACTER_RULE_ID = 'character.v1'
 RULE_RESOLUTION_SCHEMA_VERSION = 'rule-resolution-v1'
 TextAction = constr(strict=True, min_length=1, max_length=200)
 
@@ -62,7 +76,16 @@ class AbilityCheckAction(BaseModel):
     type: Literal['ability_check']
     ability: Literal['strength', 'dexterity', 'constitution', 'intelligence', 'wisdom', 'charisma']
     dc: StrictInt = Field(ge=1)
-    modifier: StrictInt = Field(ge=-MAX_MODIFIER, le=MAX_MODIFIER)
+    modifier: StrictInt | None = Field(default=None, ge=-MAX_MODIFIER, le=MAX_MODIFIER)
+    character_id: StrictStr | None = None
+
+    @model_validator(mode='after')
+    def validate_source(self):
+        if self.modifier is None and self.character_id is None:
+            raise ValueError('ability check requires modifier or character_id')
+        if self.modifier is not None and self.character_id is not None:
+            raise ValueError('character-based ability check cannot receive modifier')
+        return self
 
     class Config:
         extra = 'forbid'
@@ -72,7 +95,16 @@ class SavingThrowAction(BaseModel):
     type: Literal['saving_throw']
     ability: Literal['strength', 'dexterity', 'constitution', 'intelligence', 'wisdom', 'charisma']
     dc: StrictInt = Field(ge=1)
-    modifier: StrictInt = Field(ge=-MAX_MODIFIER, le=MAX_MODIFIER)
+    modifier: StrictInt | None = Field(default=None, ge=-MAX_MODIFIER, le=MAX_MODIFIER)
+    character_id: StrictStr | None = None
+
+    @model_validator(mode='after')
+    def validate_source(self):
+        if self.modifier is None and self.character_id is None:
+            raise ValueError('saving throw requires modifier or character_id')
+        if self.modifier is not None and self.character_id is not None:
+            raise ValueError('character-based saving throw cannot receive modifier')
+        return self
 
     class Config:
         extra = 'forbid'
@@ -88,11 +120,12 @@ class AttackDamage(BaseModel):
 
 class AttackAction(BaseModel):
     type: Literal['attack']
-    attack_bonus: StrictInt
+    attack_bonus: StrictInt | None = None
     target_ac: StrictInt | None = None
     actor_id: StrictStr | None = None
     target_id: StrictStr | None = None
     damage: AttackDamage | None = None
+    weapon_id: StrictStr | None = None
 
     @model_validator(mode='after')
     def validate_attack_target(self):
@@ -103,6 +136,10 @@ class AttackAction(BaseModel):
             raise ValueError('target_ac is required outside combat')
         if self.actor_id is not None and self.target_ac is not None:
             raise ValueError('target_ac must come from combat state')
+        if self.attack_bonus is None and self.weapon_id is None:
+            raise ValueError('attack requires attack_bonus or weapon_id')
+        if self.actor_id is None and self.attack_bonus is None:
+            raise ValueError('legacy attack requires attack_bonus')
         return self
 
     class Config:
@@ -111,13 +148,14 @@ class AttackAction(BaseModel):
 
 class CombatantSpec(BaseModel):
     id: StrictStr = Field(min_length=1, max_length=64)
-    hp: StrictInt = Field(ge=0)
-    max_hp: StrictInt = Field(gt=0)
-    ac: StrictInt = Field(ge=0)
-    initiative_modifier: StrictInt = Field(ge=-MAX_MODIFIER, le=MAX_MODIFIER)
-    position: StrictInt = Field(ge=0)
-    movement_speed: StrictInt = Field(ge=0, le=MAX_MODIFIER)
+    hp: StrictInt | None = Field(default=None, ge=0)
+    max_hp: StrictInt | None = Field(default=None, gt=0)
+    ac: StrictInt | None = Field(default=None, ge=0)
+    initiative_modifier: StrictInt | None = Field(default=None, ge=-MAX_MODIFIER, le=MAX_MODIFIER)
+    position: StrictInt = Field(default=0, ge=0)
+    movement_speed: StrictInt = Field(default=30, ge=0, le=MAX_MODIFIER)
     side: StrictStr = Field(default='neutral', min_length=1, max_length=64)
+    character: Character | None = None
 
     class Config:
         extra = 'forbid'
@@ -148,8 +186,37 @@ class EndTurnAction(BaseModel):
         extra = 'forbid'
 
 
+class CreateCharacterAction(BaseModel):
+    type: Literal['create_character']
+    character: Character
+
+    class Config:
+        extra = 'forbid'
+
+
+class SkillCheckAction(BaseModel):
+    type: Literal['skill_check']
+    skill: StrictStr
+    dc: StrictInt = Field(ge=1)
+    character_id: StrictStr | None = None
+    modifier: StrictInt | None = Field(default=None, ge=-MAX_MODIFIER, le=MAX_MODIFIER)
+
+    @model_validator(mode='after')
+    def validate_source(self):
+        if self.skill not in SKILL_TO_ABILITY:
+            raise ValueError(f'unknown skill: {self.skill}')
+        if self.character_id is not None and self.modifier is not None:
+            raise ValueError('character-based skill check cannot receive modifier')
+        if self.character_id is None and self.modifier is None:
+            raise ValueError('skill check requires character_id or modifier')
+        return self
+
+    class Config:
+        extra = 'forbid'
+
+
 class ResolveRequest(BaseModel):
-    action: TextAction | AbilityCheckAction | SavingThrowAction | AttackAction | StartCombatAction | MoveAction | EndTurnAction
+    action: TextAction | CreateCharacterAction | SkillCheckAction | AbilityCheckAction | SavingThrowAction | AttackAction | StartCombatAction | MoveAction | EndTurnAction
     state: dict[str, Any] = Field(default_factory=dict)
     rule_ids: list[str] = Field(default_factory=list)
 
@@ -430,6 +497,76 @@ def _finish_combat_if_needed(combat: dict[str, Any]) -> None:
         combat['available_actions'] = []
 
 
+def _character_from_state(state: dict[str, Any], character_id: str | None = None) -> tuple[Character, dict[str, Any]]:
+    raw = state.get('character')
+    if character_id is not None:
+        characters = state.get('characters')
+        if isinstance(characters, dict):
+            raw = characters.get(character_id)
+        elif isinstance(raw, dict) and raw.get('id') != character_id:
+            raw = None
+    if raw is None:
+        raise ValueError('character not found')
+    return derive_character(raw)
+
+
+def _character_for_combatant(state: dict[str, Any], combatant: dict[str, Any]) -> tuple[Character, dict[str, Any]]:
+    raw = combatant.get('character')
+    if raw is not None:
+        return derive_character(raw)
+    return _character_from_state(state, combatant.get('id'))
+
+
+def resolve_create_character(body: ResolveRequest) -> dict[str, Any]:
+    action = body.action
+    if not isinstance(action, CreateCharacterAction):
+        raise TypeError('resolve_create_character requires a validated action')
+    character, derived = derive_character(action.character)
+    body.state['character'] = character_to_state(character)
+    return _combat_resolution(
+        {'type': 'create_character', 'character_id': character.id},
+        check={'derived': derived},
+        rolls=[],
+        outcome={'character_id': character.id, 'derived': derived},
+        rules_used=[CHARACTER_RULE_ID, ABILITY_MODIFIER_RULE_ID, PROFICIENCY_BONUS_RULE_ID, UNARMORED_AC_RULE_ID],
+    )
+
+
+def resolve_skill_check(
+    body: ResolveRequest,
+    *,
+    randbelow: Callable[[int], int] | None = None,
+) -> dict[str, Any]:
+    action = body.action
+    if not isinstance(action, SkillCheckAction):
+        raise TypeError('resolve_skill_check requires a validated action')
+    if action.character_id is not None:
+        _character, derived = _character_from_state(body.state, action.character_id)
+        derived_modifier = derived['skill_modifiers'][action.skill]
+    else:
+        derived_modifier = action.modifier
+    if derived_modifier is None:
+        raise ValueError('skill modifier could not be derived')
+    roll = roll_dice('d20', randbelow=randbelow)
+    d20_result = roll['rolls'][0]
+    total = d20_result + derived_modifier
+    return {
+        'schema_version': RULE_RESOLUTION_SCHEMA_VERSION,
+        'resolution_id': str(uuid.uuid4()),
+        'status': 'resolved',
+        'action': {'type': action.type, 'skill': action.skill},
+        'check': {
+            'skill': action.skill,
+            'ability': SKILL_TO_ABILITY[action.skill],
+            'dc': action.dc,
+            'modifier': derived_modifier,
+        },
+        'rolls': [{'type': 'd20', 'result': d20_result}],
+        'outcome': {'total': total, 'success': total >= action.dc},
+        'rules_used': [SKILL_CHECK_RULE_ID, ABILITY_MODIFIER_RULE_ID, PROFICIENCY_BONUS_RULE_ID],
+    }
+
+
 def resolve_start_combat(
     body: ResolveRequest,
     *,
@@ -446,12 +583,27 @@ def resolve_start_combat(
     for spec in action.combatants:
         if spec.id in combatants:
             raise ValueError('combatant ids must be unique')
-        if spec.hp > spec.max_hp:
+        character_state = None
+        if spec.character is not None:
+            character, derived = derive_character(spec.character)
+            character_state = character_to_state(character)
+            resolved_max_hp = derived['hp']['max']
+            resolved_hp = derived['hp']['current']
+            resolved_ac = derived['ac']['value']
+            resolved_initiative_modifier = derived['initiative_modifier']
+        else:
+            resolved_max_hp = spec.max_hp
+            resolved_hp = spec.hp
+            resolved_ac = spec.ac
+            resolved_initiative_modifier = spec.initiative_modifier
+        if resolved_hp is None or resolved_max_hp is None or resolved_ac is None or resolved_initiative_modifier is None:
+            raise ValueError('combatant requires a character or complete legacy combat statistics')
+        if resolved_hp > resolved_max_hp:
             raise ValueError('hp cannot exceed max_hp')
         roll = roll_dice('d20', randbelow=randbelow)
         d20_result = roll['rolls'][0]
-        initiative_total = d20_result + spec.initiative_modifier
-        initiative_rows.append((spec.id, initiative_total, spec.initiative_modifier))
+        initiative_total = d20_result + resolved_initiative_modifier
+        initiative_rows.append((spec.id, initiative_total, resolved_initiative_modifier))
         rolls.append({
             'type': 'd20',
             'purpose': 'initiative',
@@ -460,19 +612,20 @@ def resolve_start_combat(
         })
         combatants[spec.id] = {
             'id': spec.id,
-            'hp': spec.hp,
-            'max_hp': spec.max_hp,
-            'ac': spec.ac,
+            'hp': resolved_hp,
+            'max_hp': resolved_max_hp,
+            'ac': resolved_ac,
             'initiative': initiative_total,
-            'initiative_modifier': spec.initiative_modifier,
+            'initiative_modifier': resolved_initiative_modifier,
             'position': spec.position,
             'movement_speed': spec.movement_speed,
-            'unconscious': spec.hp == 0,
+            'unconscious': resolved_hp == 0,
             'side': spec.side,
             'action_available': True,
             'bonus_action_available': True,
             'reaction_available': True,
             'movement_remaining': spec.movement_speed,
+            'character': character_state,
         }
     order = [item[0] for item in sorted(initiative_rows, key=lambda row: (-row[1], -row[2], row[0]))]
     combat = {
@@ -545,13 +698,25 @@ def resolve_combat_attack(
         raise ValueError('unconscious target is invalid')
     if not actor.get('action_available'):
         raise ValueError('action is already consumed')
-    if action.damage is None:
-        raise ValueError('combat attack requires damage')
+    derived_rules: list[str] = []
+    if action.weapon_id is not None:
+        character, derived = _character_for_combatant(body.state, actor)
+        weapon = character.weapon(action.weapon_id)
+        attack_bonus = derived['ability_modifiers'][weapon.ability]
+        if weapon.proficient:
+            attack_bonus += derived['proficiency_bonus']
+        damage = AttackDamage(dice=weapon.damage_dice, modifier=derived['ability_modifiers'][weapon.ability])
+        derived_rules = [WEAPON_ATTACK_RULE_ID, WEAPON_DAMAGE_RULE_ID, ABILITY_MODIFIER_RULE_ID, PROFICIENCY_BONUS_RULE_ID]
+    else:
+        if action.attack_bonus is None or action.damage is None:
+            raise ValueError('legacy combat attack requires attack_bonus and damage')
+        attack_bonus = action.attack_bonus
+        damage = action.damage
     standalone_action = AttackAction(
         type='attack',
-        attack_bonus=action.attack_bonus,
+        attack_bonus=attack_bonus,
         target_ac=target['ac'],
-        damage=action.damage,
+        damage=damage,
     )
     resolution = resolve_attack(ResolveRequest(action=standalone_action), randbelow=randbelow)
     actor['action_available'] = False
@@ -568,6 +733,9 @@ def resolve_combat_attack(
         'target_id': action.target_id,
     }
     resolution['check']['target_ac'] = target['ac']
+    if derived_rules:
+        resolution['check']['weapon_id'] = action.weapon_id
+        resolution['rules_used'] = derived_rules + resolution['rules_used']
     resolution['outcome'].update({
         'target_hp_before': hp_before,
         'target_hp_after': target['hp'],
@@ -632,6 +800,10 @@ def resolve_request(
     *,
     randbelow: Callable[[int], int] | None = None,
 ):
+    if isinstance(body.action, CreateCharacterAction):
+        return resolve_create_character(body)
+    if isinstance(body.action, SkillCheckAction):
+        return resolve_skill_check(body, randbelow=randbelow)
     if isinstance(body.action, StartCombatAction):
         return resolve_start_combat(body, randbelow=randbelow)
     if isinstance(body.action, MoveAction):
@@ -665,9 +837,17 @@ def resolve_explicit_action(
     if not isinstance(action, AbilityCheckAction):
         raise TypeError('resolve_explicit_action requires a validated ability_check action')
 
+    modifier = action.modifier
+    derived_rules: list[str] = []
+    if action.character_id is not None:
+        _character, derived = _character_from_state(body.state, action.character_id)
+        modifier = derived['ability_modifiers'][action.ability]
+        derived_rules = [ABILITY_MODIFIER_RULE_ID, CHARACTER_RULE_ID]
+    if modifier is None:
+        raise ValueError('ability check requires modifier or character_id')
     roll = roll_dice('d20', randbelow=randbelow)
     d20_result = roll['rolls'][0]
-    total = d20_result + action.modifier
+    total = d20_result + modifier
     return {
         'schema_version': RULE_RESOLUTION_SCHEMA_VERSION,
         'resolution_id': str(uuid.uuid4()),
@@ -676,11 +856,11 @@ def resolve_explicit_action(
         'check': {
             'ability': action.ability,
             'dc': action.dc,
-            'modifier': action.modifier,
+            'modifier': modifier,
         },
         'rolls': [{'type': 'd20', 'result': d20_result}],
         'outcome': {'total': total, 'success': total >= action.dc},
-        'rules_used': [ABILITY_CHECK_RULE_ID],
+        'rules_used': derived_rules + [ABILITY_CHECK_RULE_ID] if derived_rules else [ABILITY_CHECK_RULE_ID],
     }
 
 
@@ -693,9 +873,17 @@ def resolve_saving_throw(
     action = body.action
     if not isinstance(action, SavingThrowAction):
         raise TypeError('resolve_saving_throw requires a validated saving_throw action')
+    modifier = action.modifier
+    derived_rules: list[str] = []
+    if action.character_id is not None:
+        _character, derived = _character_from_state(body.state, action.character_id)
+        modifier = derived['saving_throw_modifiers'][action.ability]
+        derived_rules = [SAVING_THROW_DERIVED_RULE_ID, ABILITY_MODIFIER_RULE_ID, PROFICIENCY_BONUS_RULE_ID]
+    if modifier is None:
+        raise ValueError('saving throw requires modifier or character_id')
     roll = roll_dice('d20', randbelow=randbelow)
     d20_result = roll['rolls'][0]
-    total = d20_result + action.modifier
+    total = d20_result + modifier
     return {
         'schema_version': RULE_RESOLUTION_SCHEMA_VERSION,
         'resolution_id': str(uuid.uuid4()),
@@ -704,11 +892,11 @@ def resolve_saving_throw(
         'check': {
             'ability': action.ability,
             'dc': action.dc,
-            'modifier': action.modifier,
+            'modifier': modifier,
         },
         'rolls': [{'type': 'd20', 'result': d20_result}],
         'outcome': {'total': total, 'success': total >= action.dc},
-        'rules_used': [SAVING_THROW_RULE_ID],
+        'rules_used': derived_rules + [SAVING_THROW_RULE_ID] if derived_rules else [SAVING_THROW_RULE_ID],
     }
 
 
