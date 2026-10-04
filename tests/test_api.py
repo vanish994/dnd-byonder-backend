@@ -110,6 +110,17 @@ class RuleEngineApiTests(unittest.TestCase):
         )
 
     @staticmethod
+    def saving_throw(*, dc=13, modifier=3, ability="dexterity"):
+        return api.ResolveRequest(
+            action={
+                "type": "saving_throw",
+                "ability": ability,
+                "dc": dc,
+                "modifier": modifier,
+            }
+        )
+
+    @staticmethod
     def randbelow_for(d20_result):
         return lambda upper_bound: d20_result - 1
 
@@ -166,6 +177,46 @@ class RuleEngineApiTests(unittest.TestCase):
         )
         self.assertEqual(result["outcome"], {"total": 9, "success": False})
 
+    def test_saving_throw_resolves_success_with_expected_contract(self):
+        result = api.resolve_request(
+            self.saving_throw(dc=13, modifier=3), randbelow=self.randbelow_for(10)
+        )
+
+        self.assertEqual(result["schema_version"], "rule-resolution-v1")
+        self.assertEqual(result["status"], "resolved")
+        self.assertEqual(
+            result["action"], {"type": "saving_throw", "ability": "dexterity"}
+        )
+        self.assertEqual(
+            result["check"], {"ability": "dexterity", "dc": 13, "modifier": 3}
+        )
+        self.assertEqual(result["rolls"], [{"type": "d20", "result": 10}])
+        self.assertEqual(result["outcome"], {"total": 13, "success": True})
+        self.assertEqual(result["rules_used"], ["saving_throw.mvp.v1"])
+
+    def test_saving_throw_resolves_failure(self):
+        result = api.resolve_request(
+            self.saving_throw(dc=13, modifier=3), randbelow=self.randbelow_for(9)
+        )
+
+        self.assertEqual(result["outcome"], {"total": 12, "success": False})
+
+    def test_saving_throw_natural_20_is_normal_result(self):
+        result = api.resolve_saving_throw(
+            self.saving_throw(dc=30, modifier=0), randbelow=self.randbelow_for(20)
+        )
+
+        self.assertEqual(result["rolls"], [{"type": "d20", "result": 20}])
+        self.assertEqual(result["outcome"], {"total": 20, "success": False})
+
+    def test_saving_throw_natural_1_is_normal_result(self):
+        result = api.resolve_saving_throw(
+            self.saving_throw(dc=1, modifier=0), randbelow=self.randbelow_for(1)
+        )
+
+        self.assertEqual(result["rolls"], [{"type": "d20", "result": 1}])
+        self.assertEqual(result["outcome"], {"total": 1, "success": True})
+
     def test_ability_check_rng_is_injected_and_repeatable(self):
         body = self.ability_check()
         first = api.resolve_explicit_action(body, randbelow=self.randbelow_for(20))
@@ -182,7 +233,9 @@ class RuleEngineApiTests(unittest.TestCase):
             {"type": "ability_check", "ability": "strength", "modifier": 2},
             {"type": "ability_check", "ability": "strength", "dc": 12},
             {"type": "ability_check", "dc": 12, "modifier": 2},
-            {"type": "saving_throw", "ability": "strength", "dc": 12, "modifier": 2},
+            {"type": "saving_throw", "ability": "strength", "modifier": 2},
+            {"type": "saving_throw", "ability": "dexterity", "dc": 12},
+            {"type": "saving_throw", "ability": "athletics", "dc": 12, "modifier": 2},
             {"type": "ability_check", "ability": "athletics", "dc": 12, "modifier": 2},
             {"type": "ability_check", "ability": "strength", "dc": 0, "modifier": 2},
             {"type": "ability_check", "ability": "strength", "dc": "12", "modifier": 2},

@@ -42,6 +42,7 @@ GEMINI_MODEL = os.getenv('GEMINI_MODEL', 'gemini-3.8-flash').strip()
 app = FastAPI(title='D&D 2024 Rule Knowledge API', version='0.1.0')
 
 ABILITY_CHECK_RULE_ID = 'ability_check.mvp.v1'
+SAVING_THROW_RULE_ID = 'saving_throw.mvp.v1'
 RULE_RESOLUTION_SCHEMA_VERSION = 'rule-resolution-v1'
 TextAction = constr(strict=True, min_length=1, max_length=200)
 
@@ -63,8 +64,18 @@ class AbilityCheckAction(BaseModel):
         extra = 'forbid'
 
 
+class SavingThrowAction(BaseModel):
+    type: Literal['saving_throw']
+    ability: Literal['strength', 'dexterity', 'constitution', 'intelligence', 'wisdom', 'charisma']
+    dc: StrictInt = Field(ge=1)
+    modifier: StrictInt = Field(ge=-MAX_MODIFIER, le=MAX_MODIFIER)
+
+    class Config:
+        extra = 'forbid'
+
+
 class ResolveRequest(BaseModel):
-    action: TextAction | AbilityCheckAction
+    action: TextAction | AbilityCheckAction | SavingThrowAction
     state: dict[str, Any] = Field(default_factory=dict)
     rule_ids: list[str] = Field(default_factory=list)
 
@@ -285,6 +296,8 @@ def resolve_request(
 ):
     if isinstance(body.action, AbilityCheckAction):
         return resolve_explicit_action(body, randbelow=randbelow)
+    if isinstance(body.action, SavingThrowAction):
+        return resolve_saving_throw(body, randbelow=randbelow)
 
     # Text-only and unsupported actions remain fail-closed; KB candidates are evidence, not executable rules.
     return {
@@ -320,4 +333,32 @@ def resolve_explicit_action(
         'rolls': [{'type': 'd20', 'result': d20_result}],
         'outcome': {'total': total, 'success': total >= action.dc},
         'rules_used': [ABILITY_CHECK_RULE_ID],
+    }
+
+
+def resolve_saving_throw(
+    body: ResolveRequest,
+    *,
+    randbelow: Callable[[int], int] | None = None,
+):
+    """Resolve the supported saving-throw MVP without critical rules."""
+    action = body.action
+    if not isinstance(action, SavingThrowAction):
+        raise TypeError('resolve_saving_throw requires a validated saving_throw action')
+    roll = roll_dice('d20', randbelow=randbelow)
+    d20_result = roll['rolls'][0]
+    total = d20_result + action.modifier
+    return {
+        'schema_version': RULE_RESOLUTION_SCHEMA_VERSION,
+        'resolution_id': str(uuid.uuid4()),
+        'status': 'resolved',
+        'action': {'type': action.type, 'ability': action.ability},
+        'check': {
+            'ability': action.ability,
+            'dc': action.dc,
+            'modifier': action.modifier,
+        },
+        'rolls': [{'type': 'd20', 'result': d20_result}],
+        'outcome': {'total': total, 'success': total >= action.dc},
+        'rules_used': [SAVING_THROW_RULE_ID],
     }
