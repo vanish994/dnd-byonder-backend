@@ -844,9 +844,30 @@ def resolve_skill_check(
         derived_modifier = action.modifier
     if derived_modifier is None:
         raise ValueError('skill modifier could not be derived')
-    roll = roll_dice('d20', randbelow=randbelow)
-    d20_result = roll['rolls'][0]
+    condition_creature = None
+    if action.character_id is not None:
+        combat = body.state.get('combat')
+        if isinstance(combat, dict):
+            combatants = combat.get('combatants')
+            if isinstance(combatants, dict):
+                candidate = combatants.get(action.character_id)
+                if isinstance(candidate, dict):
+                    condition_creature = candidate
+    roll_mode = 'normal'
+    if condition_creature is not None and has_disadvantage(
+        condition_creature,
+        roll_type='ability_check',
+    ):
+        roll_mode = 'disadvantage'
+    if roll_mode == 'normal':
+        roll = roll_dice('d20', randbelow=randbelow)
+    else:
+        roll = roll_dice('d20', mode=roll_mode, randbelow=randbelow)
+    d20_result = roll['selected_roll'] if roll_mode != 'normal' else roll['rolls'][0]
     total = d20_result + derived_modifier
+    roll_entry: dict[str, Any] = {'type': 'd20', 'result': d20_result}
+    if roll_mode != 'normal':
+        roll_entry.update({'mode': roll_mode, 'rolls': roll['rolls']})
     return {
         'schema_version': RULE_RESOLUTION_SCHEMA_VERSION,
         'resolution_id': str(uuid.uuid4()),
@@ -858,7 +879,7 @@ def resolve_skill_check(
             'dc': action.dc,
             'modifier': derived_modifier,
         },
-        'rolls': [{'type': 'd20', 'result': d20_result}],
+        'rolls': [roll_entry],
         'outcome': {'total': total, 'success': total >= action.dc},
         'rules_used': [SKILL_CHECK_RULE_ID, ABILITY_MODIFIER_RULE_ID, PROFICIENCY_BONUS_RULE_ID],
     }

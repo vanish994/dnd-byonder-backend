@@ -99,6 +99,100 @@ class CharacterCoreTests(unittest.TestCase):
         with self.assertRaises(ValidationError):
             api.ResolveRequest(action={"type": "skill_check", "skill": "athletics", "dc": 12, "character_id": "player", "modifier": 999}, state=state)
 
+    def test_normal_skill_check_uses_one_d20(self):
+        state = {
+            "character": CHARACTER,
+            "combat": {
+                "combatants": {
+                    "player": {"conditions": []},
+                },
+            },
+        }
+
+        result = self.apply(
+            state,
+            {"type": "skill_check", "skill": "athletics", "dc": 12, "character_id": "player"},
+            randbelow=self.seq(17),
+        )
+
+        self.assertEqual(result["rolls"], [{"type": "d20", "result": 17}])
+        self.assertEqual(result["outcome"]["total"], 22)
+
+    def test_poisoned_skill_check_uses_disadvantage_and_lower_roll(self):
+        state = {
+            "character": CHARACTER,
+            "combat": {
+                "combatants": {
+                    "player": {
+                        "conditions": [{"id": "poisoned"}],
+                    },
+                },
+            },
+        }
+
+        result = self.apply(
+            state,
+            {"type": "skill_check", "skill": "athletics", "dc": 12, "character_id": "player"},
+            randbelow=self.seq(17, 4),
+        )
+
+        self.assertEqual(result["rolls"][0]["mode"], "disadvantage")
+        self.assertEqual(result["rolls"][0]["rolls"], [17, 4])
+        self.assertEqual(result["rolls"][0]["result"], 4)
+        self.assertEqual(result["outcome"]["total"], 9)
+
+    def test_removing_poisoned_restores_normal_skill_check(self):
+        state = {
+            "character": CHARACTER,
+            "combat": {
+                "combatants": {
+                    "player": {
+                        "conditions": [{"id": "poisoned"}],
+                    },
+                },
+            },
+        }
+        action = {
+            "type": "skill_check",
+            "skill": "athletics",
+            "dc": 12,
+            "character_id": "player",
+        }
+
+        poisoned_result = self.apply(state, action, randbelow=self.seq(17, 4))
+        self.assertEqual(poisoned_result["rolls"][0]["mode"], "disadvantage")
+        state["combat"]["combatants"]["player"]["conditions"] = []
+
+        normal_result = self.apply(state, action, randbelow=self.seq(17))
+
+        self.assertEqual(normal_result["rolls"], [{"type": "d20", "result": 17}])
+
+    def test_poisoned_skill_and_ability_checks_share_disadvantage_rule(self):
+        state = {
+            "character": CHARACTER,
+            "combat": {
+                "combatants": {
+                    "player": {
+                        "conditions": [{"id": "poisoned"}],
+                    },
+                },
+            },
+        }
+
+        skill_result = self.apply(
+            state,
+            {"type": "skill_check", "skill": "athletics", "dc": 12, "character_id": "player"},
+            randbelow=self.seq(17, 4),
+        )
+        ability_result = self.apply(
+            state,
+            {"type": "ability_check", "ability": "strength", "dc": 12, "character_id": "player"},
+            randbelow=self.seq(17, 4),
+        )
+
+        self.assertEqual(skill_result["rolls"][0]["mode"], "disadvantage")
+        self.assertEqual(ability_result["rolls"][0]["mode"], "disadvantage")
+
     def test_saving_throw_derives_proficiency(self):
         state = {"character": CHARACTER}
         result = self.apply(
