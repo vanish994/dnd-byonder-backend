@@ -409,6 +409,14 @@ def build_guided_character(selection: GuidedCharacterRequest) -> Character:
             },
         },
     }
+    if selection.level >= 2:
+        character_data["resources"]["action_surge"] = {
+            "id": "action_surge",
+            "current": class_resource_maximum(selection.class_id, "action_surge", selection.level),
+            "maximum": class_resource_maximum(selection.class_id, "action_surge", selection.level),
+            "recovery": class_resource_recovery(selection.class_id, "action_surge"),
+            "recovery_amount": class_resource_recovery_amount(selection.class_id, "action_surge"),
+        }
     character = Character.model_validate(character_data)
     return Character.model_validate({**character_data, "current_hp": character.derived()["hp"]["max"]})
 

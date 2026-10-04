@@ -60,7 +60,17 @@ CLASS_REGISTRY: dict[str, dict[str, Any]] = {
                     17: 4, 18: 4, 19: 4, 20: 4,
                 },
             },
+            "action_surge": {
+                "recovery": "short_rest",
+                "recovery_amount": 1,
+                "maximum_by_level": {
+                    2: 1, 3: 1, 4: 1, 5: 1, 6: 1, 7: 1, 8: 1, 9: 1,
+                    10: 1, 11: 1, 12: 1, 13: 1, 14: 1, 15: 1, 16: 1,
+                    17: 2, 18: 2, 19: 2, 20: 2,
+                },
+            },
         },
+        "attacks_by_level": {1: 1, 5: 2, 11: 3, 20: 4},
     },
 }
 
@@ -107,3 +117,11 @@ def class_resource_recovery_amount(class_id: str, resource_id: str) -> int | Non
     if resource is None:
         raise ValueError(f"unsupported class resource: {resource_id}")
     return resource.get("recovery_amount")
+
+
+def class_attack_count(class_id: str, level: int) -> int:
+    definition = class_definition(class_id)
+    available = [item_level for item_level in definition.get("attacks_by_level", {}) if item_level <= level]
+    if not available:
+        return 1
+    return definition["attacks_by_level"][max(available)]

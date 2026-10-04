@@ -177,7 +177,7 @@ class ProgressionTests(unittest.TestCase):
             {"id": "player", "character": character, "side": "player"},
             {"id": "enemy", "hp": 20, "max_hp": 20, "ac": 10, "initiative_modifier": -20, "side": "enemy"},
         ], "encounter_id": None})
-        result = self.apply({"type": "attack", "actor_id": "player", "target_id": "enemy", "weapon_id": "longsword"}, randbelow=self.sequence(20, 4, 6))
+        result = self.apply({"type": "attack", "actor_id": "player", "target_id": "enemy", "weapon_id": "longsword"}, randbelow=self.sequence(20, 4, 6, 10, 2))
         self.assertEqual(result["check"]["attack_bonus"], 6)
         self.assertEqual(result["check"]["damage"]["modifier"], 3)
         json.dumps(self.state)

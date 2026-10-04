@@ -26,7 +26,7 @@ from game.orchestrator import (
     NarrationError,
     RuleResolutionError,
 )
-from rule_engine.classes import class_features, class_resource_maximum, class_resource_recovery, class_resource_recovery_amount
+from rule_engine.classes import class_attack_count, class_features, class_resource_maximum, class_resource_recovery, class_resource_recovery_amount
 from rule_engine.conditions import (
     advance_condition_durations,
     clear_conditions_for_rest,
@@ -279,6 +279,14 @@ class SecondWindAction(BaseModel):
         extra = 'forbid'
 
 
+class ActionSurgeAction(BaseModel):
+    type: Literal['action_surge']
+    actor_id: StrictStr = Field(min_length=1, max_length=64)
+
+    class Config:
+        extra = 'forbid'
+
+
 class InventoryAction(BaseModel):
     type: Literal['add_item', 'remove_item', 'equip_item', 'unequip_item']
     item_id: StrictStr | None = Field(default=None, min_length=1, max_length=64)
@@ -331,7 +339,7 @@ class SkillCheckAction(BaseModel):
 
 
 class ResolveRequest(BaseModel):
-    action: TextAction | CreateCharacterAction | SkillCheckAction | AbilityCheckAction | SavingThrowAction | AttackAction | StartCombatAction | MoveAction | EndTurnAction | RestAction | ResourceAction | ExperienceAction | LevelUpAction | SecondWindAction | InventoryAction
+    action: TextAction | CreateCharacterAction | SkillCheckAction | AbilityCheckAction | SavingThrowAction | AttackAction | StartCombatAction | MoveAction | EndTurnAction | RestAction | ResourceAction | ExperienceAction | LevelUpAction | SecondWindAction | ActionSurgeAction | InventoryAction
     state: dict[str, Any] = Field(default_factory=dict)
     rule_ids: list[str] = Field(default_factory=list)
 
@@ -739,6 +747,7 @@ def _validate_initiative_state(combat: dict[str, Any]) -> None:
 
 def _start_turn(combat: dict[str, Any], actor: dict[str, Any]) -> None:
     actor['action_available'] = True
+    actor['action_uses_remaining'] = 1
     actor['bonus_action_available'] = True
     actor['reaction_available'] = True
     actor.pop('_movement_remaining_before_condition_block', None)
@@ -787,12 +796,15 @@ def _combat_available_actions(combat: dict[str, Any]) -> list[dict[str, str]]:
         has_condition(actor, 'grappled') or has_condition(actor, 'restrained')
     ):
         actions.append({'type': 'move'})
-    if actor.get('action_available'):
+    if actor.get('action_uses_remaining', 1 if actor.get('action_available') else 0) > 0:
         actions.append({'type': 'attack'})
     character = actor.get('character')
     second_wind = character.get('resources', {}).get('second_wind') if isinstance(character, dict) else None
     if actor.get('bonus_action_available') and isinstance(second_wind, dict) and second_wind.get('current', 0) > 0:
         actions.append({'type': 'second_wind'})
+    action_surge = character.get('resources', {}).get('action_surge') if isinstance(character, dict) else None
+    if isinstance(action_surge, dict) and action_surge.get('current', 0) > 0:
+        actions.append({'type': 'action_surge'})
     actions.append({'type': 'end_turn'})
     return actions
 
@@ -990,28 +1002,31 @@ def _sync_class_resources(character_state: dict[str, Any], character: Character)
     resources = character_state.setdefault('resources', {})
     if not isinstance(resources, dict):
         raise ValueError('resources must be an object')
-    resource_id = 'second_wind'
-    maximum = class_resource_maximum(character.class_.id, resource_id, character.level)
-    recovery = class_resource_recovery(character.class_.id, resource_id)
-    recovery_amount = class_resource_recovery_amount(character.class_.id, resource_id)
-    existing = resources.get(resource_id)
-    if existing is None:
-        current = maximum
-    else:
-        if not isinstance(existing, dict):
-            raise ValueError('class resource must be an object')
-        old_maximum = existing.get('maximum')
-        old_current = existing.get('current')
-        if not isinstance(old_maximum, int) or not isinstance(old_current, int):
-            raise ValueError('class resource has invalid counters')
-        current = maximum if old_current == old_maximum else min(old_current, maximum)
-    resources[resource_id] = {
-        'id': resource_id,
-        'current': current,
-        'maximum': maximum,
-        'recovery': recovery,
-        **({'recovery_amount': recovery_amount} if recovery_amount is not None else {}),
-    }
+    resource_ids = ['second_wind']
+    if character.level >= 2:
+        resource_ids.append('action_surge')
+    for resource_id in resource_ids:
+        maximum = class_resource_maximum(character.class_.id, resource_id, character.level)
+        recovery = class_resource_recovery(character.class_.id, resource_id)
+        recovery_amount = class_resource_recovery_amount(character.class_.id, resource_id)
+        existing = resources.get(resource_id)
+        if existing is None:
+            current = maximum
+        else:
+            if not isinstance(existing, dict):
+                raise ValueError('class resource must be an object')
+            old_maximum = existing.get('maximum')
+            old_current = existing.get('current')
+            if not isinstance(old_maximum, int) or not isinstance(old_current, int):
+                raise ValueError('class resource has invalid counters')
+            current = maximum if old_current == old_maximum else min(old_current, maximum)
+        resources[resource_id] = {
+            'id': resource_id,
+            'current': current,
+            'maximum': maximum,
+            'recovery': recovery,
+            **({'recovery_amount': recovery_amount} if recovery_amount is not None else {}),
+        }
 
 
 def resolve_level_up(body: ResolveRequest) -> dict[str, Any]:
@@ -1227,6 +1242,7 @@ def resolve_start_combat(
             'side': spec.side,
             'conditions': [],
             'action_available': True,
+            'action_uses_remaining': 1,
             'bonus_action_available': True,
             'reaction_available': True,
             'movement_remaining': spec.movement_speed,
@@ -1354,25 +1370,48 @@ def resolve_second_wind(
     )
 
 
-def resolve_combat_attack(
+def resolve_action_surge(body: ResolveRequest) -> dict[str, Any]:
+    action = body.action
+    if not isinstance(action, ActionSurgeAction):
+        raise TypeError('resolve_action_surge requires a validated action')
+    combat = _require_combat(body.state)
+    actor = _require_current_actor(combat, action.actor_id)
+    if actor.get('unconscious'):
+        raise ValueError('unconscious actor cannot use action surge')
+    character_state = actor.get('character')
+    if not isinstance(character_state, dict):
+        raise ValueError('action surge requires a character-backed combatant')
+    character = Character.model_validate(character_state)
+    if character.class_.id != 'fighter' or character.level < 2:
+        raise ValueError('action surge is not available')
+    consumed = consume_resource(character_state, 'action_surge')
+    action_uses = actor.get('action_uses_remaining', 1 if actor.get('action_available') else 0)
+    actor['action_uses_remaining'] = action_uses + 1
+    actor['action_available'] = True
+    combat['available_actions'] = _combat_available_actions(combat)
+    return _combat_resolution(
+        {'type': 'action_surge', 'actor_id': action.actor_id},
+        check={'resource': consumed['id']},
+        rolls=[],
+        outcome={
+            'action_uses_remaining': actor['action_uses_remaining'],
+            'resource_current': consumed['current'],
+        },
+        rules_used=['fighter.action_surge.v2024'],
+    )
+
+
+def _resolve_single_combat_attack(
     body: ResolveRequest,
+    action: AttackAction,
+    combat: dict[str, Any],
+    actor: dict[str, Any],
+    target: dict[str, Any],
     *,
     randbelow: Callable[[int], int] | None = None,
 ) -> dict[str, Any]:
-    action = body.action
-    if not isinstance(action, AttackAction) or action.actor_id is None or action.target_id is None:
-        raise TypeError('resolve_combat_attack requires a validated combat attack')
-    combat = _require_combat(body.state)
-    actor = _require_current_actor(combat, action.actor_id)
-    target = combat['combatants'].get(action.target_id)
-    if target is None:
-        raise ValueError('target does not exist')
-    if actor.get('unconscious'):
-        raise ValueError('unconscious actor cannot attack')
     if target.get('unconscious'):
         raise ValueError('unconscious target is invalid')
-    if not actor.get('action_available'):
-        raise ValueError('action is already consumed')
     attacker_disadvantage = has_disadvantage(actor, roll_type='attack')
     target_advantage = has_condition(target, 'restrained')
     if target_advantage and not attacker_disadvantage:
@@ -1384,9 +1423,7 @@ def resolve_combat_attack(
     derived_rules: list[str] = []
     if action.weapon_id is not None or action.attack_bonus is None:
         character, derived = _character_for_combatant(body.state, actor)
-        requested_weapon_id = action.weapon_id
-        if requested_weapon_id is None:
-            requested_weapon_id = character.equipped.get('weapon')
+        requested_weapon_id = action.weapon_id or character.equipped.get('weapon')
         if requested_weapon_id is None:
             raise ValueError('combat attack requires an equipped weapon')
         raw_character = actor.get('character') or body.state.get('character') or {}
@@ -1405,30 +1442,16 @@ def resolve_combat_attack(
         attack_bonus = action.attack_bonus
         damage = action.damage
         resolved_weapon_id = None
-    standalone_action = AttackAction(
-        type='attack',
-        attack_bonus=attack_bonus,
-        target_ac=target['ac'],
-        damage=damage,
-    )
+    standalone_action = AttackAction(type='attack', attack_bonus=attack_bonus, target_ac=target['ac'], damage=damage)
     resolution = resolve_attack(
-        ResolveRequest(action=standalone_action),
-        randbelow=randbelow,
-        roll_mode=attack_roll_mode,
+        ResolveRequest(action=standalone_action), randbelow=randbelow, roll_mode=attack_roll_mode,
     )
-    actor['action_available'] = False
-    damage = resolution['outcome']['damage']
     hp_before = target['hp']
-    if resolution['outcome']['hit'] and damage is not None:
-        target['hp'] = max(0, target['hp'] - damage)
+    damage_result = resolution['outcome']['damage']
+    if resolution['outcome']['hit'] and damage_result is not None:
+        target['hp'] = max(0, target['hp'] - damage_result)
         target['unconscious'] = target['hp'] == 0
-    _finish_combat_if_needed(combat)
-    combat['available_actions'] = _combat_available_actions(combat)
-    resolution['action'] = {
-        'type': 'attack',
-        'actor_id': action.actor_id,
-        'target_id': action.target_id,
-    }
+    resolution['action'] = {'type': 'attack', 'actor_id': action.actor_id, 'target_id': action.target_id}
     resolution['check']['target_ac'] = target['ac']
     if derived_rules:
         resolution['check']['weapon_id'] = resolved_weapon_id
@@ -1437,9 +1460,61 @@ def resolve_combat_attack(
         'target_hp_before': hp_before,
         'target_hp_after': target['hp'],
         'target_unconscious': target['unconscious'],
-        'combat_active': combat['active'],
     })
     return resolution
+
+
+def resolve_combat_attack(
+    body: ResolveRequest,
+    *,
+    randbelow: Callable[[int], int] | None = None,
+) -> dict[str, Any]:
+    action = body.action
+    if not isinstance(action, AttackAction) or action.actor_id is None or action.target_id is None:
+        raise TypeError('resolve_combat_attack requires a validated combat attack')
+    combat = _require_combat(body.state)
+    actor = _require_current_actor(combat, action.actor_id)
+    target = combat['combatants'].get(action.target_id)
+    if target is None:
+        raise ValueError('target does not exist')
+    if actor.get('unconscious'):
+        raise ValueError('unconscious actor cannot attack')
+    action_uses = actor.get('action_uses_remaining', 1 if actor.get('action_available') else 0)
+    if action_uses <= 0:
+        raise ValueError('action is already consumed')
+    character = actor.get('character')
+    attack_count = 1
+    if isinstance(character, dict):
+        validated_character = Character.model_validate(character)
+        attack_count = class_attack_count(validated_character.class_.id, validated_character.level)
+    resolutions: list[dict[str, Any]] = []
+    for _ in range(attack_count):
+        if target.get('unconscious'):
+            break
+        resolutions.append(_resolve_single_combat_attack(body, action, combat, actor, target, randbelow=randbelow))
+    actor['action_uses_remaining'] = max(0, action_uses - 1)
+    actor['action_available'] = actor['action_uses_remaining'] > 0
+    _finish_combat_if_needed(combat)
+    combat['available_actions'] = _combat_available_actions(combat)
+    if len(resolutions) == 1:
+        resolution = resolutions[0]
+        resolution['outcome']['combat_active'] = combat['active']
+        return resolution
+    total_damage = sum(item['outcome']['damage'] or 0 for item in resolutions)
+    first = resolutions[0]
+    first['action'] = {'type': 'attack', 'actor_id': action.actor_id, 'target_id': action.target_id}
+    first['rolls'] = [roll for item in resolutions for roll in item['rolls']]
+    first['rules_used'] = list(dict.fromkeys(rule for item in resolutions for rule in item['rules_used']))
+    nested_resolutions = deepcopy(resolutions)
+    first['outcome'].update({
+        'attacks': nested_resolutions,
+        'attack_count': len(resolutions),
+        'damage': total_damage,
+        'hit': any(item['outcome']['hit'] for item in resolutions),
+        'critical': any(item['outcome']['critical'] for item in resolutions),
+        'combat_active': combat['active'],
+    })
+    return first
 
 
 def resolve_end_turn(body: ResolveRequest) -> dict[str, Any]:
@@ -1570,6 +1645,8 @@ def resolve_request(
             return resolve_level_up(body)
         if isinstance(body.action, SecondWindAction):
             return resolve_second_wind(body, randbelow=randbelow)
+        if isinstance(body.action, ActionSurgeAction):
+            return resolve_action_surge(body)
         if isinstance(body.action, InventoryAction):
             return resolve_inventory(body)
         if isinstance(body.action, AbilityCheckAction):
