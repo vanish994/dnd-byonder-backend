@@ -622,6 +622,19 @@ def _require_current_actor(combat: dict[str, Any], actor_id: str) -> dict[str, A
     return actor
 
 
+def _require_bonus_action(combat: dict[str, Any], actor_id: str) -> dict[str, Any]:
+    actor = _require_current_actor(combat, actor_id)
+    if actor.get('unconscious'):
+        raise ValueError('unconscious actor cannot use bonus action')
+    if not actor.get('bonus_action_available'):
+        raise ValueError('BLOCKED_ACTION')
+    return actor
+
+
+def _consume_bonus_action(actor: dict[str, Any]) -> None:
+    actor['bonus_action_available'] = False
+
+
 def _finish_combat_if_needed(combat: dict[str, Any]) -> None:
     combatants = combat['combatants']
     sides = {item.get('side', 'neutral') for item in combatants.values()}

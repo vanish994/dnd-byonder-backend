@@ -751,6 +751,33 @@ class CombatVerticalSliceTests(unittest.TestCase):
 
         self.assertEqual(result["outcome"]["movement_remaining"], 25)
 
+    def test_bonus_action_resource_consumes_once_without_affecting_other_resources(self):
+        state = {}
+        self.start(state)
+        player = state["combat"]["combatants"]["player"]
+        player["movement_remaining"] = 12
+
+        actor = api._require_bonus_action(state["combat"], "player")
+        api._consume_bonus_action(actor)
+
+        self.assertFalse(player["bonus_action_available"])
+        self.assertTrue(player["action_available"])
+        self.assertTrue(player["reaction_available"])
+        self.assertEqual(player["movement_remaining"], 12)
+        with self.assertRaisesRegex(ValueError, "BLOCKED_ACTION"):
+            api._require_bonus_action(state["combat"], "player")
+        self.assertFalse(player["bonus_action_available"])
+
+    def test_bonus_action_resource_rejects_unconscious_actor_without_consuming(self):
+        state = {}
+        self.start(state)
+        player = state["combat"]["combatants"]["player"]
+        player["unconscious"] = True
+
+        with self.assertRaisesRegex(ValueError, "unconscious"):
+            api._require_bonus_action(state["combat"], "player")
+        self.assertTrue(player["bonus_action_available"])
+
     def test_end_turn_expires_actor_turn_conditions(self):
         state = {}
         self.start(state)
