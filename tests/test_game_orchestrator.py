@@ -3,6 +3,7 @@ from unittest.mock import Mock
 
 from game.contracts import GameTurnRequest
 from game.orchestrator import GameOrchestrator, InvalidGameAction
+from services.narrator import NarratorError
 
 
 class GameOrchestratorTests(unittest.TestCase):
@@ -48,6 +49,7 @@ class GameOrchestratorTests(unittest.TestCase):
         self.resolve_action.assert_called_once_with(action, {"hp": 12})
         self.assertEqual(response.rule_resolution["schema_version"], "rule-resolution-v1")
         self.assertEqual(response.rule_resolution["outcome"]["success"], True)
+        self.assertEqual(response.narration_status, "available")
         sent_resolution = self.narrator.narrate.call_args.kwargs["rule_resolution"]
         self.assertEqual(sent_resolution, response.rule_resolution)
         self.assertNotIn("facts_resolvidos", response.rule_resolution)
@@ -68,6 +70,54 @@ class GameOrchestratorTests(unittest.TestCase):
         response = self.orchestrator.turn(request)
         self.assertEqual(state, {"character": {"hp": 12}})
         self.assertEqual(response.state, state)
+
+    def test_narrator_failure_preserves_mechanics_and_returns_unavailable(self):
+        self.narrator.narrate.side_effect = NarratorError("temporary provider failure")
+        request = GameTurnRequest(
+            campaign_id="campaign_123",
+            state={"hp": 12},
+            player_input="Eu ataco.",
+            action={"type": "attack", "attack_bonus": 5, "target_ac": 15},
+            available_actions=[{"type": "attack"}],
+        )
+
+        response = self.orchestrator.turn(request)
+
+        self.assertEqual(response.narration_status, "unavailable")
+        self.assertIn("temporariamente indisponível", response.narration)
+        self.assertEqual(response.rule_resolution, self.resolve_action.return_value)
+        self.assertEqual(response.state, {"hp": 12})
+        self.assertEqual(response.available_actions, [{"type": "attack"}])
+        self.resolve_action.assert_called_once_with(request.action, {"hp": 12})
+
+    def test_narrator_failure_does_not_resolve_again(self):
+        self.narrator.narrate.side_effect = NarratorError("timeout")
+        request = GameTurnRequest(
+            player_input="Eu ataco.",
+            action={"type": "attack", "attack_bonus": 5, "target_ac": 15},
+        )
+
+        response = self.orchestrator.turn(request)
+
+        self.assertEqual(response.rule_resolution["rolls"], [{"type": "d20", "result": 14}])
+        self.resolve_action.assert_called_once_with(request.action, {})
+
+    def test_provider_failures_preserve_resolution(self):
+        request = GameTurnRequest(
+            player_input="Eu ataco.",
+            action={"type": "attack", "attack_bonus": 5, "target_ac": 15},
+        )
+
+        for provider_error in ("HTTP 503", "HTTP 429", "timeout"):
+            with self.subTest(provider_error=provider_error):
+                self.narrator.narrate.reset_mock()
+                self.narrator.narrate.side_effect = NarratorError(provider_error)
+                self.resolve_action.reset_mock()
+                response = self.orchestrator.turn(request)
+
+                self.assertEqual(response.narration_status, "unavailable")
+                self.assertEqual(response.rule_resolution["rolls"], [{"type": "d20", "result": 14}])
+                self.resolve_action.assert_called_once_with(request.action, {})
 
 
 if __name__ == "__main__":

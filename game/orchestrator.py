@@ -17,7 +17,7 @@ class RuleResolutionError(RuntimeError):
 
 
 class NarrationError(RuntimeError):
-    """Raised when MiMo fails after a mechanical resolution was produced."""
+    """Retained for compatibility with callers that classify narration failures."""
 
     def __init__(self, message: str, rule_resolution: dict[str, Any]) -> None:
         super().__init__(message)
@@ -61,11 +61,15 @@ class GameOrchestrator:
                 available_actions=deepcopy(request.available_actions),
                 request_id=request_id,
             )
-        except NarratorError as exc:
-            raise NarrationError("Narrator unavailable", resolution) from exc
+        except NarratorError:
+            narration = "A resolução mecânica foi concluída, mas a narração está temporariamente indisponível."
+            narration_status = "unavailable"
+        else:
+            narration_status = "available"
         return GameTurnResponse(
             campaign_id=request.campaign_id,
             narration=narration,
+            narration_status=narration_status,
             rule_resolution=resolution,
             state=state,
             available_actions=deepcopy(request.available_actions),

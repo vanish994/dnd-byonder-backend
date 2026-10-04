@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, StrictStr
 
@@ -16,6 +16,7 @@ class GameTurnRequest(BaseModel):
 class GameTurnResponse(BaseModel):
     campaign_id: str
     narration: str
+    narration_status: Literal['available', 'unavailable'] = 'available'
     rule_resolution: dict[str, Any]
     state: dict[str, Any]
     available_actions: list[dict[str, Any]]
