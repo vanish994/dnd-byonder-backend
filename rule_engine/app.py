@@ -932,7 +932,7 @@ def resolve_start_combat(
         outcome={
             'combat_started': True,
             'round': 1,
-            'turn_index': 0,
+            'turn_index': combat['turn_index'],
             'current_actor_id': combat['current_actor_id'],
             'turn_order': order,
             'lifecycle_events': ['round_start', 'turn_start'],

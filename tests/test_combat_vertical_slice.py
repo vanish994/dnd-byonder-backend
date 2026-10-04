@@ -488,8 +488,17 @@ class CombatVerticalSliceTests(unittest.TestCase):
             combatants=combatants,
         )
 
+        self.assertEqual(state["combat"]["turn_index"], 1)
+        self.assertEqual(
+            result["outcome"]["turn_index"],
+            state["combat"]["turn_index"],
+        )
         self.assertEqual(state["combat"]["current_actor_id"], "goblin-1")
         self.assertEqual(result["outcome"]["current_actor_id"], "goblin-1")
+        self.assertEqual(
+            state["combat"]["current_actor_id"],
+            result["outcome"]["current_actor_id"],
+        )
         self.assertTrue(state["combat"]["active"])
 
     def test_current_actor_becoming_unconscious_advances_to_next_eligible_actor(self):
