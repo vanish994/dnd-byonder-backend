@@ -27,6 +27,7 @@ from game.orchestrator import (
 )
 from rule_engine.conditions import (
     advance_condition_durations,
+    has_condition,
     has_disadvantage,
 )
 from rule_engine.dice import MAX_MODIFIER, DiceExpressionError, roll_dice
@@ -568,7 +569,7 @@ def _combat_available_actions(combat: dict[str, Any]) -> list[dict[str, str]]:
     if not actor or actor.get('unconscious'):
         return [{'type': 'end_turn'}]
     actions: list[dict[str, str]] = []
-    if actor.get('movement_remaining', 0) > 0:
+    if actor.get('movement_remaining', 0) > 0 and not has_condition(actor, 'grappled'):
         actions.append({'type': 'move'})
     if actor.get('action_available'):
         actions.append({'type': 'attack'})
@@ -791,6 +792,8 @@ def resolve_move(body: ResolveRequest) -> dict[str, Any]:
     actor = _require_current_actor(combat, action.actor_id)
     if actor.get('unconscious'):
         raise ValueError('unconscious actor cannot move')
+    if action.distance > 0 and has_condition(actor, 'grappled'):
+        raise ValueError('grappled actor cannot move')
     if action.distance > actor.get('movement_remaining', 0):
         raise ValueError('movement exceeds remaining movement')
     actor['position'] += action.distance
@@ -933,7 +936,11 @@ def resolve_end_turn(body: ResolveRequest) -> dict[str, Any]:
     next_actor['action_available'] = True
     next_actor['bonus_action_available'] = True
     next_actor['reaction_available'] = True
-    next_actor['movement_remaining'] = next_actor['movement_speed']
+    next_actor['movement_remaining'] = (
+        0
+        if has_condition(next_actor, 'grappled')
+        else next_actor['movement_speed']
+    )
     combat['available_actions'] = _combat_available_actions(combat)
     return _combat_resolution(
         {'type': 'end_turn', 'actor_id': action.actor_id},

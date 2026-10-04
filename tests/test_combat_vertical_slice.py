@@ -270,6 +270,84 @@ class CombatVerticalSliceTests(unittest.TestCase):
                 randbelow=self.sequence(20, 8),
             )
 
+    def test_grappled_actor_cannot_move_or_receive_move_action(self):
+        state = {}
+        self.start(state)
+        player = state["combat"]["combatants"]["player"]
+        player["conditions"] = [{"id": "grappled"}]
+
+        self.assertNotIn(
+            {"type": "move"},
+            api._combat_available_actions(state["combat"]),
+        )
+        with self.assertRaises(ValueError):
+            self.apply(
+                state,
+                {"type": "move", "actor_id": "player", "distance": 1},
+            )
+
+    def test_grappled_actor_stays_blocked_on_next_turn(self):
+        state = {}
+        self.start(state)
+        player = state["combat"]["combatants"]["player"]
+        player["conditions"] = [{"id": "grappled"}]
+
+        self.apply(state, {"type": "end_turn", "actor_id": "player"})
+        self.apply(state, {"type": "end_turn", "actor_id": "goblin-1"})
+
+        self.assertEqual(state["combat"]["current_actor_id"], "player")
+        self.assertEqual(player["movement_remaining"], 0)
+        self.assertNotIn(
+            {"type": "move"},
+            state["combat"]["available_actions"],
+        )
+
+    def test_removing_grappled_allows_movement(self):
+        state = {}
+        self.start(state)
+        player = state["combat"]["combatants"]["player"]
+        player["conditions"] = [{"id": "grappled"}]
+        player["conditions"] = []
+
+        result = self.apply(
+            state,
+            {"type": "move", "actor_id": "player", "distance": 1},
+        )
+
+        self.assertEqual(result["outcome"]["movement_remaining"], 29)
+
+    def test_expiring_grappled_allows_movement(self):
+        state = {}
+        self.start(state)
+        player = state["combat"]["combatants"]["player"]
+        player["conditions"] = [
+            {
+                "id": "grappled",
+                "duration": {"kind": "turns", "remaining": 1},
+            }
+        ]
+
+        self.apply(state, {"type": "end_turn", "actor_id": "player"})
+        self.apply(state, {"type": "end_turn", "actor_id": "goblin-1"})
+
+        self.assertEqual(player["conditions"], [])
+        result = self.apply(
+            state,
+            {"type": "move", "actor_id": "player", "distance": 1},
+        )
+        self.assertEqual(result["outcome"]["movement_remaining"], 29)
+
+    def test_grappled_does_not_change_other_combat_resources(self):
+        state = {}
+        self.start(state)
+        player = state["combat"]["combatants"]["player"]
+        player["conditions"] = [{"id": "grappled"}]
+
+        self.assertTrue(player["action_available"])
+        self.assertTrue(player["bonus_action_available"])
+        self.assertTrue(player["reaction_available"])
+        self.assertEqual(player["movement_remaining"], 30)
+
     def test_start_combat_rejects_invalid_combatant(self):
         body = api.ResolveRequest(
                 action={
