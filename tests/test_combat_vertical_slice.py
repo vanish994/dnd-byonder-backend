@@ -1,8 +1,13 @@
+import json
 import unittest
 from copy import deepcopy
 
 from game.contracts import GameTurnResponse
 import rule_engine.app as api
+
+
+def json_round_trip(value):
+    return json.loads(json.dumps(value)) == value
 
 
 class CombatVerticalSliceTests(unittest.TestCase):
@@ -247,6 +252,71 @@ class CombatVerticalSliceTests(unittest.TestCase):
             )
 
         self.assertEqual(state, before)
+
+    def test_partial_attack_failure_restores_full_state_and_root_identity(self):
+        state = {}
+        self.start(state, combatants=self.combatants(goblin_hp=20))
+        combat = state["combat"]
+        player = combat["combatants"]["player"]
+        player["movement_remaining"] = -1
+        before = deepcopy(state)
+        state_id = id(state)
+
+        with self.assertRaisesRegex(ValueError, "invalid movement_remaining"):
+            self.attack(state, d20=20, d8=4)
+
+        self.assertEqual(state, before)
+        self.assertEqual(id(state), state_id)
+        self.assertIs(state["combat"], combat)
+        self.assertEqual(
+            state["combat"]["combatants"]["player"]["conditions"],
+            before["combat"]["combatants"]["player"]["conditions"],
+        )
+        self.assertTrue(json_round_trip(state))
+
+    def test_partial_end_turn_failure_restores_lifecycle_and_resources(self):
+        state = {}
+        self.start(state)
+        combat = state["combat"]
+        combat["turn_index"] = 1
+        combat["current_actor_id"] = "goblin-1"
+        goblin = combat["combatants"]["goblin-1"]
+        player = combat["combatants"]["player"]
+        goblin["conditions"] = [
+            {"id": "poisoned", "duration": {"kind": "turns", "remaining": 2}}
+        ]
+        player["movement_speed"] = -1
+        before = deepcopy(state)
+        state_id = id(state)
+
+        with self.assertRaisesRegex(ValueError, "invalid movement_speed"):
+            self.apply(state, {"type": "end_turn", "actor_id": "goblin-1"})
+
+        self.assertEqual(state, before)
+        self.assertEqual(id(state), state_id)
+        self.assertEqual(state["combat"]["round"], 1)
+        self.assertEqual(state["combat"]["turn_index"], 1)
+        self.assertEqual(state["combat"]["current_actor_id"], "goblin-1")
+        self.assertEqual(state["combat"]["combatants"], before["combat"]["combatants"])
+        self.assertTrue(json_round_trip(state))
+
+    def test_restore_state_removes_fields_created_after_snapshot(self):
+        state = {
+            "combat": {
+                "round": 1,
+                "combatants": {"player": {"conditions": []}},
+            }
+        }
+        before = deepcopy(state)
+        state["combat"]["partial_field"] = "must be removed"
+        state["partial_top_level"] = True
+
+        api._restore_state_in_place(state, before)
+
+        self.assertEqual(state, before)
+        self.assertNotIn("partial_field", state["combat"])
+        self.assertNotIn("partial_top_level", state)
+        self.assertTrue(json_round_trip(state))
 
     def test_invalid_end_turn_actor_does_not_mutate_initiative(self):
         state = {}

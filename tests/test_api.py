@@ -6,6 +6,7 @@ from unittest.mock import patch
 from uuid import UUID
 
 from fastapi import HTTPException
+from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 import rule_engine.app as api
@@ -488,6 +489,64 @@ class RuleEngineApiTests(unittest.TestCase):
         api.resolve_request(body, randbelow=self.randbelow_for(14))
 
         self.assertEqual(body.state, original_state)
+
+    def test_public_resolve_endpoint_returns_rule_resolution_contract(self):
+        response = TestClient(api.app).post(
+            "/v1/resolve",
+            headers={"x-api-key": "test-secret"},
+            json={
+                "action": {
+                    "type": "ability_check",
+                    "ability": "strength",
+                    "dc": 15,
+                    "modifier": 3,
+                },
+            },
+        )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        payload = response.json()
+        self.assertEqual(payload["schema_version"], "rule-resolution-v1")
+        self.assertEqual(payload["status"], "resolved")
+        self.assertEqual(payload["action"], {"type": "ability_check", "ability": "strength"})
+        self.assertEqual(payload["check"], {"ability": "strength", "dc": 15, "modifier": 3})
+        self.assertIn("outcome", payload)
+        self.assertIn("rules_used", payload)
+
+    def test_public_resolve_endpoint_rejects_invalid_request(self):
+        response = TestClient(api.app).post(
+            "/v1/resolve",
+            headers={"x-api-key": "test-secret"},
+            json={
+                "action": {
+                    "type": "ability_check",
+                    "ability": "not-an-ability",
+                    "dc": 15,
+                    "modifier": 3,
+                },
+            },
+        )
+
+        self.assertEqual(response.status_code, 422)
+
+    def test_public_resolve_endpoint_returns_rule_error_without_success_payload(self):
+        client = TestClient(api.app, raise_server_exceptions=False)
+        response = client.post(
+            "/v1/resolve",
+            headers={"x-api-key": "test-secret"},
+            json={
+                "state": {},
+                "action": {
+                    "type": "ability_check",
+                    "ability": "strength",
+                    "dc": 15,
+                    "character_id": "missing",
+                },
+            },
+        )
+
+        self.assertEqual(response.status_code, 500)
+        self.assertNotIn("status\": \"resolved\"", response.text)
 
 
 if __name__ == "__main__":
