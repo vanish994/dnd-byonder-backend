@@ -35,6 +35,19 @@ DURATION_KINDS = frozenset(
     }
 )
 
+TIMING_PHASES = frozenset(
+    {
+        "turn_start",
+        "turn_end",
+        "round_start",
+        "round_end",
+    }
+)
+_CONTEXTUAL_DURATION_KINDS = frozenset(
+    {"rounds", "until_end_of_turn", "until_start_of_turn"}
+)
+_MISSING = object()
+
 
 def _validate_condition_id(condition_id: str) -> None:
     if condition_id not in CONDITION_IDS:
@@ -58,6 +71,42 @@ def _validate_duration(duration: dict[str, Any]) -> None:
 
         if remaining < 1:
             raise ValueError("timed duration must be positive")
+
+
+def _validate_timing(timing: dict[str, Any]) -> None:
+    if not isinstance(timing, dict):
+        raise ValueError("condition timing must be an object")
+
+    applied_round = timing.get("applied_round")
+    applied_turn_index = timing.get("applied_turn_index")
+    applied_phase = timing.get("applied_phase")
+
+    if (
+        not isinstance(applied_round, int)
+        or isinstance(applied_round, bool)
+        or applied_round < 1
+    ):
+        raise ValueError("condition timing requires a positive applied_round")
+    if (
+        not isinstance(applied_turn_index, int)
+        or isinstance(applied_turn_index, bool)
+        or applied_turn_index < 0
+    ):
+        raise ValueError("condition timing requires a valid applied_turn_index")
+    if applied_phase not in TIMING_PHASES:
+        raise ValueError(f"unknown condition timing phase: {applied_phase}")
+
+
+def _validate_contextual_timing(
+    duration: dict[str, Any],
+    timing: dict[str, Any] | None,
+) -> None:
+    if duration["kind"] in _CONTEXTUAL_DURATION_KINDS and timing is None:
+        raise ValueError(
+            f"{duration['kind']} duration requires application timing"
+        )
+    if timing is not None:
+        _validate_timing(timing)
 
 
 def normalize_conditions(value: Any) -> list[dict[str, Any]]:
@@ -87,6 +136,8 @@ def normalize_conditions(value: Any) -> list[dict[str, Any]]:
         )
 
         _validate_duration(duration)
+        timing = condition.get("_timing")
+        _validate_contextual_timing(duration, timing)
 
         source_id = condition.get("source_id")
 
@@ -98,14 +149,15 @@ def normalize_conditions(value: Any) -> list[dict[str, Any]]:
         if not isinstance(effects, list):
             raise ValueError("condition effects must be a list")
 
-        normalized.append(
-            {
-                "id": condition_id,
-                "source_id": source_id,
-                "duration": dict(duration),
-                "effects": list(effects),
-            }
-        )
+        normalized_condition = {
+            "id": condition_id,
+            "source_id": source_id,
+            "duration": dict(duration),
+            "effects": list(effects),
+        }
+        if timing is not None:
+            normalized_condition["_timing"] = dict(timing)
+        normalized.append(normalized_condition)
 
     return normalized
 
@@ -130,15 +182,21 @@ def add_condition(
     *,
     condition_id: str,
     source_id: str | None = None,
-    duration: dict[str, Any] | None = None,
+    duration: dict[str, Any] | None | object = _MISSING,
     effects: list[dict[str, Any]] | None = None,
+    timing: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     _validate_condition_id(condition_id)
 
-    resolved_duration = duration or {"kind": "permanent"}
+    resolved_duration = (
+        {"kind": "permanent"}
+        if duration is _MISSING or duration is None
+        else duration
+    )
     _validate_duration(resolved_duration)
+    _validate_contextual_timing(resolved_duration, timing)
 
-    resolved_effects = effects or []
+    resolved_effects = [] if effects is None else effects
 
     if not isinstance(resolved_effects, list):
         raise ValueError("effects must be a list")
@@ -149,6 +207,8 @@ def add_condition(
         "duration": dict(resolved_duration),
         "effects": list(resolved_effects),
     }
+    if timing is not None:
+        condition["_timing"] = dict(timing)
 
     conditions = get_conditions(creature)
     conditions.append(condition)
@@ -189,45 +249,78 @@ def remove_condition_instance(
     return conditions.pop(condition_index)
 
 
+def _cursor(timing: dict[str, Any]) -> tuple[int, int]:
+    return timing["applied_round"], timing["applied_turn_index"]
+
+
 def advance_condition_durations(
     creature: dict[str, Any],
     *,
     timing: str,
+    current_round: int | None = None,
+    current_turn_index: int | None = None,
 ) -> list[dict[str, Any]]:
-    if timing not in {
-        "turn_end",
-        "turn_start",
-        "round_end",
-        "round_start",
-    }:
+    if timing not in TIMING_PHASES:
         raise ValueError(f"unknown condition timing: {timing}")
+    if current_round is not None and (
+        not isinstance(current_round, int)
+        or isinstance(current_round, bool)
+        or current_round < 1
+    ):
+        raise ValueError("current_round must be a positive integer")
+    if current_turn_index is not None and (
+        not isinstance(current_turn_index, int)
+        or isinstance(current_turn_index, bool)
+        or current_turn_index < 0
+    ):
+        raise ValueError("current_turn_index must be a non-negative integer")
 
     conditions = get_conditions(creature)
     expired: list[dict[str, Any]] = []
     remaining_conditions: list[dict[str, Any]] = []
+    current_cursor = (
+        (current_round, current_turn_index)
+        if current_round is not None and current_turn_index is not None
+        else None
+    )
 
     for condition in conditions:
         duration = condition["duration"]
         kind = duration["kind"]
+        condition_timing = condition.get("_timing")
+        should_expire = False
 
-        should_decrement = (
-            (kind == "turns" and timing == "turn_end")
-            or (kind == "rounds" and timing == "round_end")
-        )
-
-        if not should_decrement:
-            remaining_conditions.append(condition)
-            continue
-
-        duration["remaining"] -= 1
-
-        if duration["remaining"] <= 0:
+        if kind == "turns" and timing == "turn_end":
+            duration["remaining"] -= 1
+            should_expire = duration["remaining"] <= 0
+        elif kind in _CONTEXTUAL_DURATION_KINDS:
+            if condition_timing is None or current_cursor is None:
+                raise ValueError(
+                    f"{kind} duration requires lifecycle timing context"
+                )
+            applied_cursor = _cursor(condition_timing)
+            if kind == "until_end_of_turn":
+                should_expire = (
+                    timing == "turn_end" and current_cursor >= applied_cursor
+                )
+            elif kind == "until_start_of_turn":
+                should_expire = (
+                    timing == "turn_start" and current_cursor > applied_cursor
+                )
+            elif kind == "rounds":
+                if (
+                    timing == "round_end"
+                    and current_round is not None
+                    and current_round > condition_timing["applied_round"]
+                ):
+                    duration["remaining"] -= 1
+                    should_expire = duration["remaining"] <= 0
+        if should_expire:
             expired.append(condition)
         else:
             remaining_conditions.append(condition)
 
     creature["conditions"] = remaining_conditions
-
     return expired
 
 

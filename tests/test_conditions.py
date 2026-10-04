@@ -125,11 +125,18 @@ class ConditionTests(unittest.TestCase):
                 "kind": "rounds",
                 "remaining": 2,
             },
+            timing={
+                "applied_round": 1,
+                "applied_turn_index": 0,
+                "applied_phase": "turn_start",
+            },
         )
 
         advance_condition_durations(
             creature,
             timing="turn_end",
+            current_round=1,
+            current_turn_index=1,
         )
 
         self.assertEqual(
@@ -140,12 +147,136 @@ class ConditionTests(unittest.TestCase):
         advance_condition_durations(
             creature,
             timing="round_end",
+            current_round=2,
+            current_turn_index=1,
         )
 
         self.assertEqual(
             creature["conditions"][0]["duration"]["remaining"],
             1,
         )
+
+    def test_empty_duration_is_rejected(self):
+        with self.assertRaises(ValueError):
+            add_condition(
+                {},
+                condition_id="poisoned",
+                duration={},
+            )
+
+    def test_until_end_of_turn_expires_at_target_turn_end(self):
+        creature = {}
+        add_condition(
+            creature,
+            condition_id="poisoned",
+            duration={"kind": "until_end_of_turn"},
+            timing={
+                "applied_round": 1,
+                "applied_turn_index": 0,
+                "applied_phase": "turn_start",
+            },
+        )
+
+        self.assertEqual(
+            advance_condition_durations(
+                creature,
+                timing="turn_end",
+                current_round=1,
+                current_turn_index=0,
+            )[0]["id"],
+            "poisoned",
+        )
+        self.assertEqual(creature["conditions"], [])
+
+    def test_until_start_of_turn_expires_at_next_target_turn_start(self):
+        creature = {}
+        add_condition(
+            creature,
+            condition_id="poisoned",
+            duration={"kind": "until_start_of_turn"},
+            timing={
+                "applied_round": 1,
+                "applied_turn_index": 0,
+                "applied_phase": "turn_start",
+            },
+        )
+
+        self.assertEqual(
+            advance_condition_durations(
+                creature,
+                timing="turn_start",
+                current_round=1,
+                current_turn_index=0,
+            ),
+            [],
+        )
+        expired = advance_condition_durations(
+            creature,
+            timing="turn_start",
+            current_round=1,
+            current_turn_index=1,
+        )
+        self.assertEqual([condition["id"] for condition in expired], ["poisoned"])
+
+    def test_round_duration_expires_after_complete_following_rounds(self):
+        creature = {}
+        add_condition(
+            creature,
+            condition_id="frightened",
+            duration={"kind": "rounds", "remaining": 1},
+            timing={
+                "applied_round": 1,
+                "applied_turn_index": 1,
+                "applied_phase": "turn_start",
+            },
+        )
+
+        self.assertEqual(
+            advance_condition_durations(
+                creature,
+                timing="round_end",
+                current_round=1,
+                current_turn_index=1,
+            ),
+            [],
+        )
+        expired = advance_condition_durations(
+            creature,
+            timing="round_end",
+            current_round=2,
+            current_turn_index=1,
+        )
+        self.assertEqual([condition["id"] for condition in expired], ["frightened"])
+
+    def test_round_duration_two_requires_two_complete_following_rounds(self):
+        creature = {}
+        add_condition(
+            creature,
+            condition_id="frightened",
+            duration={"kind": "rounds", "remaining": 2},
+            timing={
+                "applied_round": 1,
+                "applied_turn_index": 0,
+                "applied_phase": "turn_start",
+            },
+        )
+
+        self.assertEqual(
+            advance_condition_durations(
+                creature,
+                timing="round_end",
+                current_round=2,
+                current_turn_index=1,
+            ),
+            [],
+        )
+        expired = advance_condition_durations(
+            creature,
+            timing="round_end",
+            current_round=3,
+            current_turn_index=1,
+        )
+        self.assertEqual([condition["id"] for condition in expired], ["frightened"])
 
     def test_remove_condition_removes_all_instances_of_same_condition(self):
         creature = {}

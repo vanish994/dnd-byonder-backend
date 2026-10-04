@@ -1231,6 +1231,99 @@ class CombatVerticalSliceTests(unittest.TestCase):
             [],
         )
 
+    def test_until_end_of_turn_expires_for_current_actor(self):
+        state = {}
+        self.start(state)
+        player = state["combat"]["combatants"]["player"]
+        player["conditions"] = [
+            {
+                "id": "poisoned",
+                "duration": {"kind": "until_end_of_turn"},
+                "_timing": {
+                    "applied_round": 1,
+                    "applied_turn_index": 0,
+                    "applied_phase": "turn_start",
+                },
+            }
+        ]
+
+        self.apply(state, {"type": "end_turn", "actor_id": "player"})
+
+        self.assertEqual(player["conditions"], [])
+
+    def test_until_start_of_turn_expires_on_next_actor_start(self):
+        state = {}
+        self.start(state)
+        goblin = state["combat"]["combatants"]["goblin-1"]
+        goblin["conditions"] = [
+            {
+                "id": "poisoned",
+                "duration": {"kind": "until_start_of_turn"},
+                "_timing": {
+                    "applied_round": 1,
+                    "applied_turn_index": 0,
+                    "applied_phase": "turn_end",
+                },
+            }
+        ]
+
+        self.apply(state, {"type": "end_turn", "actor_id": "player"})
+
+        self.assertEqual(goblin["conditions"], [])
+
+    def test_round_duration_survives_current_round_and_expires_after_next_complete_round(self):
+        state = {}
+        self.start(state)
+        player = state["combat"]["combatants"]["player"]
+        player["conditions"] = [
+            {
+                "id": "frightened",
+                "duration": {"kind": "rounds", "remaining": 1},
+                "_timing": {
+                    "applied_round": 1,
+                    "applied_turn_index": 0,
+                    "applied_phase": "turn_start",
+                },
+            }
+        ]
+
+        self.apply(state, {"type": "end_turn", "actor_id": "player"})
+        self.assertEqual(len(player["conditions"]), 1)
+        self.apply(state, {"type": "end_turn", "actor_id": "goblin-1"})
+        self.assertEqual(len(player["conditions"]), 1)
+        self.assertEqual(state["combat"]["round"], 2)
+        self.apply(state, {"type": "end_turn", "actor_id": "player"})
+        self.apply(state, {"type": "end_turn", "actor_id": "goblin-1"})
+
+        self.assertEqual(player["conditions"], [])
+
+    def test_condition_timing_survives_state_round_trip(self):
+        state = {}
+        self.start(state)
+        player = state["combat"]["combatants"]["player"]
+        player["conditions"] = [
+            {
+                "id": "frightened",
+                "duration": {"kind": "rounds", "remaining": 2},
+                "_timing": {
+                    "applied_round": 1,
+                    "applied_turn_index": 0,
+                    "applied_phase": "turn_start",
+                },
+            }
+        ]
+
+        self.apply(state, {"type": "end_turn", "actor_id": "player"})
+
+        self.assertEqual(
+            player["conditions"][0]["_timing"],
+            {
+                "applied_round": 1,
+                "applied_turn_index": 0,
+                "applied_phase": "turn_start",
+            },
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

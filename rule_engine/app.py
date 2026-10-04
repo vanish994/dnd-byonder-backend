@@ -1111,6 +1111,8 @@ def resolve_end_turn(body: ResolveRequest) -> dict[str, Any]:
     expired_conditions = advance_condition_durations(
         actor,
         timing="turn_end",
+        current_round=combat["round"],
+        current_turn_index=combat["turn_index"],
     )
     next_actor, next_index, wrapped = _determine_next_actor(combat)
     if next_actor is None:
@@ -1130,10 +1132,38 @@ def resolve_end_turn(body: ResolveRequest) -> dict[str, Any]:
             },
         )
     if wrapped:
+        round_end_expired = []
+        for combatant in combat["combatants"].values():
+            round_end_expired.extend(
+                advance_condition_durations(
+                    combatant,
+                    timing="round_end",
+                    current_round=combat["round"],
+                    current_turn_index=combat["turn_index"],
+                )
+            )
+        expired_conditions.extend(round_end_expired)
         combat['round'] += 1
+        for combatant in combat["combatants"].values():
+            expired_conditions.extend(
+                advance_condition_durations(
+                    combatant,
+                    timing="round_start",
+                    current_round=combat["round"],
+                    current_turn_index=0,
+                )
+            )
     combat['turn_index'] = next_index
     combat['current_actor_id'] = next_actor['id']
     _start_turn(combat, next_actor)
+    expired_conditions.extend(
+        advance_condition_durations(
+            next_actor,
+            timing="turn_start",
+            current_round=combat["round"],
+            current_turn_index=next_index,
+        )
+    )
     combat['available_actions'] = _combat_available_actions(combat)
     lifecycle_events = ['turn_end']
     if wrapped:
