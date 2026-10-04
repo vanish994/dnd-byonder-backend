@@ -5,7 +5,7 @@ from copy import deepcopy
 from typing import Any
 
 from game.contracts import GameTurnRequest, GameTurnResponse
-from services.mimo_narrator import MimoNarratorClient, MimoNarratorError
+from services.narrator import NarratorError, NarratorProvider
 
 
 class InvalidGameAction(ValueError):
@@ -27,7 +27,7 @@ class NarrationError(RuntimeError):
 class GameOrchestrator:
     def __init__(
         self,
-        narrator: MimoNarratorClient,
+        narrator: NarratorProvider,
         *,
         resolve_action: Callable[[dict[str, Any], dict[str, Any]], dict[str, Any]],
     ) -> None:
@@ -58,9 +58,10 @@ class GameOrchestrator:
                 state=state,
                 player_input=request.player_input,
                 rule_resolution=resolution,
+                available_actions=deepcopy(request.available_actions),
             )
-        except MimoNarratorError as exc:
-            raise NarrationError("MiMo narrator unavailable", resolution) from exc
+        except NarratorError as exc:
+            raise NarrationError("Narrator unavailable", resolution) from exc
         return GameTurnResponse(
             campaign_id=request.campaign_id,
             narration=narration,

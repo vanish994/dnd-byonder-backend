@@ -5,8 +5,10 @@ from urllib.parse import urljoin
 
 import httpx
 
+from services.narrator import NarratorError
 
-class MimoNarratorError(RuntimeError):
+
+class MimoNarratorError(NarratorError):
     """Raised when the narrator proxy cannot produce a valid narration."""
 
 
@@ -34,6 +36,7 @@ class MimoNarratorClient:
         state: dict[str, Any],
         player_input: str,
         rule_resolution: dict[str, Any],
+        available_actions: list[dict[str, Any]] | None = None,
     ) -> str:
         from game.narrator import build_narrator_content
 
@@ -45,9 +48,11 @@ class MimoNarratorClient:
                 {
                     "role": "user",
                     "content": build_narrator_content(
+                        campaign_id=campaign_id,
                         state=state,
                         player_input=player_input,
                         rule_resolution=rule_resolution,
+                        available_actions=available_actions,
                     ),
                 }
             ],

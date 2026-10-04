@@ -7,11 +7,15 @@ services:
     envVars:
       - key: RULE_ENGINE_API_KEY
         generateValue: true
-      - key: MIMO_BASE_URL
-        value: https://dnd-mimo-narrator.onrender.com
-      - key: MIMO_MODEL
-        value: mimo-v2.6-flash
-      - key: MIMO_TIMEOUT_SECONDS
+      - key: NARRATOR_PROVIDER
+        value: gemini
+      - key: GEMINI_MODEL
+        value: gemini-flash-latest
+      - key: GEMINI_TIMEOUT_SECONDS
         value: "30"
-      - key: MIMO_API_KEY
+      - key: GEMINI_MAX_OUTPUT_TOKENS
+        value: "512"
+      - key: GEMINI_TEMPERATURE
+        value: "0.7"
+      - key: GEMINI_API_KEY
         sync: false

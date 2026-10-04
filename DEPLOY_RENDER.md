@@ -67,16 +67,36 @@ O serviço de regras já pesquisa as fontes 2024/5.5 e 2025, mas `/v1/resolve` a
 
 ## 4. Marco 5 — configuração do backend
 
+### Narrador Gemini (provider padrão)
+
+O backend usa o SDK oficial Python `google-genai` e seleciona Gemini por padrão.
+Configure os valores não sensíveis e o secret diretamente no Render:
+
+```text
+NARRATOR_PROVIDER=gemini
+GEMINI_MODEL=gemini-flash-latest
+GEMINI_TIMEOUT_SECONDS=30
+GEMINI_MAX_OUTPUT_TOKENS=512
+GEMINI_TEMPERATURE=0.7
+GEMINI_API_KEY=<secret do Google Gemini>
+```
+
+O provider MiMo permanece disponível somente para rollback explícito com
+`NARRATOR_PROVIDER=mimo`; não é necessário configurá-lo para o provider Gemini.
+
 No serviço `dnd-2024-rule-engine`, adicione:
 
 ```text
+NARRATOR_PROVIDER=mimo
 MIMO_BASE_URL=https://dnd-mimo-narrator.onrender.com
 MIMO_MODEL=mimo-v2.6-flash
 MIMO_API_KEY=<API_KEY do serviço MiMo>
 MIMO_TIMEOUT_SECONDS=30
 ```
 
-`MIMO_API_KEY` deve ser configurada como secret. Ela é diferente de `RULE_ENGINE_API_KEY`, que continua protegendo os endpoints do backend.
+`MIMO_API_KEY` deve ser configurada como secret somente quando o rollback MiMo
+for explicitamente selecionado. A chave é diferente de `RULE_ENGINE_API_KEY`,
+que continua protegendo os endpoints do backend.
 
 O proxy correto deste projeto é o serviço `vanish994/Mimo-ai`, exposto em `https://dnd-mimo-narrator.onrender.com`. Não é necessário criar serviço, fazer deploy ou alterar o repositório do proxy para o Marco 5.
 

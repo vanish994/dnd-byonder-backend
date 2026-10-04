@@ -14,11 +14,15 @@ class GameApiTests(unittest.TestCase):
             "base": api.MIMO_BASE_URL,
             "model": api.MIMO_MODEL,
             "mimo_key": api.MIMO_API_KEY,
+            "provider": api.NARRATOR_PROVIDER,
+            "gemini_key": api.GEMINI_API_KEY,
         }
         api.API_KEY = "backend-secret"
         api.MIMO_BASE_URL = "https://mimo.example"
         api.MIMO_MODEL = "mimo-v2.6-flash"
         api.MIMO_API_KEY = "mimo-secret"
+        api.NARRATOR_PROVIDER = "mimo"
+        api.GEMINI_API_KEY = "gemini-secret"
         self.addCleanup(self.restore)
 
     def restore(self):
@@ -26,6 +30,8 @@ class GameApiTests(unittest.TestCase):
         api.MIMO_BASE_URL = self.previous["base"]
         api.MIMO_MODEL = self.previous["model"]
         api.MIMO_API_KEY = self.previous["mimo_key"]
+        api.NARRATOR_PROVIDER = self.previous["provider"]
+        api.GEMINI_API_KEY = self.previous["gemini_key"]
 
     @patch.object(api, "GameOrchestrator")
     def test_turn_returns_response_and_preserves_contract(self, orchestrator_cls):
@@ -54,6 +60,13 @@ class GameApiTests(unittest.TestCase):
 
     def test_missing_mimo_configuration_is_503(self):
         api.MIMO_API_KEY = ""
+        with self.assertRaises(HTTPException) as raised:
+            api.game_turn(api.GameTurnRequest(player_input="x"), "backend-secret")
+        self.assertEqual(raised.exception.status_code, 503)
+
+    def test_missing_gemini_configuration_is_503(self):
+        api.NARRATOR_PROVIDER = "gemini"
+        api.GEMINI_API_KEY = ""
         with self.assertRaises(HTTPException) as raised:
             api.game_turn(api.GameTurnRequest(player_input="x"), "backend-secret")
         self.assertEqual(raised.exception.status_code, 503)

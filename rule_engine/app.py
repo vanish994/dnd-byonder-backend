@@ -18,6 +18,7 @@ from game.orchestrator import (
 )
 from rule_engine.dice import MAX_MODIFIER, DiceExpressionError, roll_dice
 from rule_engine.source_policy import STRICT_EDITION_SCOPE, append_strict_source_policy
+from services.gemini_narrator import GeminiNarratorClient
 from services.mimo_narrator import MimoNarratorClient
 
 DB_PATH = Path(
@@ -30,6 +31,9 @@ API_KEY = os.getenv('RULE_ENGINE_API_KEY', '').strip()
 MIMO_BASE_URL = os.getenv('MIMO_BASE_URL', '').strip()
 MIMO_MODEL = os.getenv('MIMO_MODEL', 'mimo-v2.6-flash').strip()
 MIMO_API_KEY = os.getenv('MIMO_API_KEY', '').strip()
+NARRATOR_PROVIDER = os.getenv('NARRATOR_PROVIDER', 'gemini').strip().lower()
+GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '').strip()
+GEMINI_MODEL = os.getenv('GEMINI_MODEL', 'gemini-flash-latest').strip()
 app = FastAPI(title='D&D 2024 Rule Knowledge API', version='0.1.0')
 
 ABILITY_CHECK_RULE_ID = 'ability_check.mvp.v1'
@@ -178,18 +182,37 @@ def resolve_game_action(action: dict[str, Any], state: dict[str, Any]) -> dict[s
 
 
 def build_game_orchestrator() -> GameOrchestrator:
-    if not MIMO_BASE_URL or not MIMO_API_KEY:
-        raise HTTPException(status_code=503, detail='MiMo narrator is not configured')
-    try:
-        timeout = float(os.getenv('MIMO_TIMEOUT_SECONDS', '30'))
-    except ValueError as exc:
-        raise HTTPException(status_code=503, detail='invalid MIMO_TIMEOUT_SECONDS') from exc
-    narrator = MimoNarratorClient(
-        base_url=MIMO_BASE_URL,
-        model=MIMO_MODEL,
-        api_key=MIMO_API_KEY,
-        timeout_seconds=timeout,
-    )
+    if NARRATOR_PROVIDER == 'gemini':
+        if not GEMINI_API_KEY:
+            raise HTTPException(status_code=503, detail='Gemini narrator is not configured')
+        try:
+            timeout = float(os.getenv('GEMINI_TIMEOUT_SECONDS', '30'))
+            max_output_tokens = int(os.getenv('GEMINI_MAX_OUTPUT_TOKENS', '512'))
+            temperature = float(os.getenv('GEMINI_TEMPERATURE', '0.7'))
+        except ValueError as exc:
+            raise HTTPException(status_code=503, detail='invalid Gemini narrator configuration') from exc
+        narrator = GeminiNarratorClient(
+            api_key=GEMINI_API_KEY,
+            model=GEMINI_MODEL,
+            timeout_seconds=timeout,
+            max_output_tokens=max_output_tokens,
+            temperature=temperature,
+        )
+    elif NARRATOR_PROVIDER == 'mimo':
+        if not MIMO_BASE_URL or not MIMO_API_KEY:
+            raise HTTPException(status_code=503, detail='MiMo narrator is not configured')
+        try:
+            timeout = float(os.getenv('MIMO_TIMEOUT_SECONDS', '30'))
+        except ValueError as exc:
+            raise HTTPException(status_code=503, detail='invalid MIMO_TIMEOUT_SECONDS') from exc
+        narrator = MimoNarratorClient(
+            base_url=MIMO_BASE_URL,
+            model=MIMO_MODEL,
+            api_key=MIMO_API_KEY,
+            timeout_seconds=timeout,
+        )
+    else:
+        raise HTTPException(status_code=503, detail='unsupported narrator provider')
     return GameOrchestrator(narrator, resolve_action=resolve_game_action)
 
 
@@ -206,7 +229,7 @@ def game_turn(body: GameTurnRequest, x_api_key: str | None = Header(default=None
         raise HTTPException(
             status_code=502,
             detail={
-                'message': 'MiMo narrator unavailable',
+                'message': 'Narrator unavailable',
                 'rule_resolution': exc.rule_resolution,
             },
         ) from exc
