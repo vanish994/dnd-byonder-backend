@@ -22,6 +22,8 @@ CONDITION_IDS = frozenset(
         "unconscious",
     }
 )
+_MOVEMENT_BLOCKING_CONDITIONS = frozenset({"grappled", "restrained"})
+_SAVED_MOVEMENT_KEY = "_movement_remaining_before_condition_block"
 
 
 DURATION_KINDS = frozenset(
@@ -175,6 +177,24 @@ def has_condition(creature: dict[str, Any], condition_id: str) -> bool:
     )
 
 
+def sync_movement_with_conditions(creature: dict[str, Any]) -> None:
+    if "movement_speed" not in creature or "movement_remaining" not in creature:
+        return
+
+    blocked = any(
+        condition["id"] in _MOVEMENT_BLOCKING_CONDITIONS
+        for condition in get_conditions(creature)
+    )
+    if blocked:
+        if _SAVED_MOVEMENT_KEY not in creature:
+            creature[_SAVED_MOVEMENT_KEY] = creature["movement_remaining"]
+        creature["movement_remaining"] = 0
+        return
+
+    if _SAVED_MOVEMENT_KEY in creature:
+        creature["movement_remaining"] = creature.pop(_SAVED_MOVEMENT_KEY)
+
+
 def add_condition(
     creature: dict[str, Any],
     *,
@@ -211,6 +231,7 @@ def add_condition(
     conditions = get_conditions(creature)
     conditions.append(condition)
     creature["conditions"] = conditions
+    sync_movement_with_conditions(creature)
 
     return condition
 
@@ -230,6 +251,7 @@ def remove_condition(
         for condition in conditions
         if condition["id"] != condition_id
     ]
+    sync_movement_with_conditions(creature)
 
     return before - len(creature["conditions"])
 
@@ -246,6 +268,7 @@ def remove_condition_instance(
 
     removed = conditions.pop(condition_index)
     creature["conditions"] = conditions
+    sync_movement_with_conditions(creature)
     return removed
 
 
@@ -321,6 +344,7 @@ def advance_condition_durations(
             remaining_conditions.append(condition)
 
     creature["conditions"] = remaining_conditions
+    sync_movement_with_conditions(creature)
     return expired
 
 
@@ -355,6 +379,7 @@ def clear_conditions_for_rest(
     ]
 
     creature["conditions"] = remaining
+    sync_movement_with_conditions(creature)
 
     return removed
 

@@ -4,6 +4,7 @@ from copy import deepcopy
 
 from game.contracts import GameTurnResponse
 import rule_engine.app as api
+from rule_engine.conditions import add_condition, remove_condition
 
 
 def json_round_trip(value):
@@ -846,6 +847,148 @@ class CombatVerticalSliceTests(unittest.TestCase):
             {"type": "move"},
             state["combat"]["available_actions"],
         )
+
+    def test_applying_and_removing_grappled_restores_unspent_movement(self):
+        state = {}
+        self.start(state)
+        player = state["combat"]["combatants"]["player"]
+        player["movement_remaining"] = 25
+
+        add_condition(player, condition_id="grappled")
+        self.assertEqual(player["movement_remaining"], 0)
+        self.assertNotIn(
+            {"type": "move"},
+            api._combat_available_actions(state["combat"]),
+        )
+
+        remove_condition(player, condition_id="grappled")
+        result = self.apply(
+            state,
+            {"type": "move", "actor_id": "player", "distance": 5},
+        )
+        self.assertEqual(result["outcome"]["movement_remaining"], 20)
+
+    def test_saved_movement_survives_public_round_trip(self):
+        state = {}
+        self.start(state)
+        player = state["combat"]["combatants"]["player"]
+        player["movement_remaining"] = 25
+        add_condition(player, condition_id="grappled")
+
+        self.apply_through_game_turn_round_trip(
+            state,
+            {"type": "move", "actor_id": "player", "distance": 0},
+        )
+        remove_condition(state["combat"]["combatants"]["player"], condition_id="grappled")
+
+        result = self.apply(
+            state,
+            {"type": "move", "actor_id": "player", "distance": 5},
+        )
+        self.assertEqual(result["outcome"]["movement_remaining"], 20)
+
+    def test_restrained_blocks_and_removal_restores_unspent_movement(self):
+        state = {}
+        self.start(state)
+        player = state["combat"]["combatants"]["player"]
+        player["movement_remaining"] = 25
+
+        add_condition(player, condition_id="restrained")
+        self.assertEqual(player["movement_remaining"], 0)
+        with self.assertRaisesRegex(ValueError, "conditioned actor cannot move"):
+            self.apply(
+                state,
+                {"type": "move", "actor_id": "player", "distance": 1},
+            )
+
+        remove_condition(player, condition_id="restrained")
+        result = self.apply(
+            state,
+            {"type": "move", "actor_id": "player", "distance": 5},
+        )
+        self.assertEqual(result["outcome"]["movement_remaining"], 20)
+
+    def test_grappled_and_restrained_remove_in_any_order(self):
+        for first_removed in ("grappled", "restrained"):
+            with self.subTest(first_removed=first_removed):
+                state = {}
+                self.start(state)
+                player = state["combat"]["combatants"]["player"]
+                player["movement_remaining"] = 20
+                add_condition(player, condition_id="grappled")
+                add_condition(player, condition_id="restrained")
+
+                remove_condition(player, condition_id=first_removed)
+                self.assertEqual(player["movement_remaining"], 0)
+                self.assertNotIn(
+                    {"type": "move"},
+                    api._combat_available_actions(state["combat"]),
+                )
+
+                remove_condition(
+                    player,
+                    condition_id=(
+                        "restrained"
+                        if first_removed == "grappled"
+                        else "grappled"
+                    ),
+                )
+                self.assertEqual(player["movement_remaining"], 20)
+
+    def test_prone_with_grappled_or_restrained_restores_and_pays_stand_cost(self):
+        for blocker in ("grappled", "restrained"):
+            with self.subTest(blocker=blocker):
+                state = {}
+                self.start(state)
+                player = state["combat"]["combatants"]["player"]
+                add_condition(player, condition_id="prone")
+                add_condition(player, condition_id=blocker)
+                self.assertEqual(player["movement_remaining"], 0)
+
+                remove_condition(player, condition_id=blocker)
+                result = self.apply(
+                    state,
+                    {"type": "move", "actor_id": "player", "distance": 5},
+                )
+                self.assertEqual(player["conditions"], [])
+                self.assertEqual(result["outcome"]["movement_remaining"], 10)
+
+    def test_all_three_conditions_require_both_blockers_removed(self):
+        state = {}
+        self.start(state)
+        player = state["combat"]["combatants"]["player"]
+        add_condition(player, condition_id="prone")
+        add_condition(player, condition_id="grappled")
+        add_condition(player, condition_id="restrained")
+
+        remove_condition(player, condition_id="grappled")
+        self.assertEqual(player["movement_remaining"], 0)
+        remove_condition(player, condition_id="restrained")
+        self.assertEqual(player["movement_remaining"], 30)
+
+        result = self.apply(
+            state,
+            {"type": "move", "actor_id": "player", "distance": 5},
+        )
+        self.assertEqual(player["conditions"], [])
+        self.assertEqual(result["outcome"]["movement_remaining"], 10)
+
+    def test_expiring_grappled_restores_movement_on_next_turn(self):
+        state = {}
+        self.start(state)
+        player = state["combat"]["combatants"]["player"]
+        add_condition(
+            player,
+            condition_id="grappled",
+            duration={"kind": "turns", "remaining": 1},
+        )
+        self.assertEqual(player["movement_remaining"], 0)
+
+        self.apply(state, {"type": "end_turn", "actor_id": "player"})
+        self.apply(state, {"type": "end_turn", "actor_id": "goblin-1"})
+
+        self.assertEqual(player["conditions"], [])
+        self.assertEqual(player["movement_remaining"], 30)
 
     def test_removing_grappled_allows_movement(self):
         state = {}

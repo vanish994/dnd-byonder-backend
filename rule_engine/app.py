@@ -31,6 +31,7 @@ from rule_engine.conditions import (
     has_condition,
     has_disadvantage,
     remove_condition,
+    sync_movement_with_conditions,
 )
 from rule_engine.dice import MAX_MODIFIER, DiceExpressionError, roll_dice
 from rule_engine.character import (
@@ -650,11 +651,9 @@ def _start_turn(combat: dict[str, Any], actor: dict[str, Any]) -> None:
     actor['action_available'] = True
     actor['bonus_action_available'] = True
     actor['reaction_available'] = True
-    actor['movement_remaining'] = (
-        0
-        if has_condition(actor, 'grappled') or has_condition(actor, 'restrained')
-        else actor['movement_speed']
-    )
+    actor.pop('_movement_remaining_before_condition_block', None)
+    actor['movement_remaining'] = actor['movement_speed']
+    sync_movement_with_conditions(actor)
 
 
 def _determine_next_actor(
@@ -682,6 +681,8 @@ def _combat_available_actions(combat: dict[str, Any]) -> list[dict[str, str]]:
     actor = combat.get('combatants', {}).get(combat.get('current_actor_id'))
     if not actor or actor.get('unconscious'):
         return [{'type': 'end_turn'}]
+    _validate_movement_state(actor)
+    sync_movement_with_conditions(actor)
     _validate_movement_state(actor)
     actions: list[dict[str, str]] = []
     movement_available = actor.get('movement_remaining', 0) > 0
@@ -995,6 +996,8 @@ def resolve_move(body: ResolveRequest) -> dict[str, Any]:
         raise TypeError('resolve_move requires a validated action')
     combat = _require_combat(body.state)
     actor = _require_current_actor(combat, action.actor_id)
+    _validate_movement_state(actor)
+    sync_movement_with_conditions(actor)
     _validate_movement_state(actor)
     if actor.get('unconscious'):
         raise ValueError('unconscious actor cannot move')

@@ -49,6 +49,32 @@ class ConditionTests(unittest.TestCase):
         self.assertEqual(condition["duration"]["remaining"], 2)
         self.assertTrue(has_condition(creature, "poisoned"))
 
+    def test_blocking_condition_zeroes_and_removal_restores_movement(self):
+        creature = {
+            "movement_speed": 30,
+            "movement_remaining": 25,
+        }
+
+        add_condition(creature, condition_id="grappled")
+        self.assertEqual(creature["movement_remaining"], 0)
+
+        remove_condition(creature, condition_id="grappled")
+        self.assertEqual(creature["movement_remaining"], 25)
+
+    def test_composed_blocking_conditions_restore_only_after_last_removal(self):
+        creature = {
+            "movement_speed": 30,
+            "movement_remaining": 20,
+        }
+
+        add_condition(creature, condition_id="grappled")
+        add_condition(creature, condition_id="restrained")
+        remove_condition(creature, condition_id="grappled")
+        self.assertEqual(creature["movement_remaining"], 0)
+
+        remove_condition(creature, condition_id="restrained")
+        self.assertEqual(creature["movement_remaining"], 20)
+
     def test_same_condition_can_have_independent_instances(self):
         creature = {}
 
