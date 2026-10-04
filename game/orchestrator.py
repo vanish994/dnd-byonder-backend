@@ -34,7 +34,7 @@ class GameOrchestrator:
         self.narrator = narrator
         self.resolve_action = resolve_action
 
-    def turn(self, request: GameTurnRequest) -> GameTurnResponse:
+    def turn(self, request: GameTurnRequest, *, request_id: str | None = None) -> GameTurnResponse:
         state = deepcopy(request.state)
         if request.action is None:
             resolution = {
@@ -59,6 +59,7 @@ class GameOrchestrator:
                 player_input=request.player_input,
                 rule_resolution=resolution,
                 available_actions=deepcopy(request.available_actions),
+                request_id=request_id,
             )
         except NarratorError as exc:
             raise NarrationError("Narrator unavailable", resolution) from exc

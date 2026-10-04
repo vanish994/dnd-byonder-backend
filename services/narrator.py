@@ -16,5 +16,6 @@ class NarratorProvider(Protocol):
         player_input: str,
         rule_resolution: dict[str, Any],
         available_actions: list[dict[str, Any]] | None = None,
+        request_id: str | None = None,
     ) -> str:
         """Narrate already-resolved facts without changing game state."""

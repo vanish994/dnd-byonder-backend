@@ -37,6 +37,7 @@ class MimoNarratorClient:
         player_input: str,
         rule_resolution: dict[str, Any],
         available_actions: list[dict[str, Any]] | None = None,
+        request_id: str | None = None,
     ) -> str:
         from game.narrator import build_narrator_content
 

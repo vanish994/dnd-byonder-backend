@@ -1,6 +1,8 @@
 import os
 import re
 import sqlite3
+import logging
+import time
 import uuid
 from collections.abc import Callable
 from pathlib import Path
@@ -20,6 +22,9 @@ from rule_engine.dice import MAX_MODIFIER, DiceExpressionError, roll_dice
 from rule_engine.source_policy import STRICT_EDITION_SCOPE, append_strict_source_policy
 from services.gemini_narrator import GeminiNarratorClient
 from services.mimo_narrator import MimoNarratorClient
+
+
+logger = logging.getLogger(__name__)
 
 DB_PATH = Path(
     os.getenv(
@@ -217,15 +222,53 @@ def build_game_orchestrator() -> GameOrchestrator:
 
 
 @app.post('/v1/game/turn', response_model=GameTurnResponse)
-def game_turn(body: GameTurnRequest, x_api_key: str | None = Header(default=None)):
+def game_turn(
+    body: GameTurnRequest,
+    x_api_key: str | None = Header(default=None),
+    x_request_id: str | None = Header(default=None),
+):
     authorize(x_api_key)
+    started = time.perf_counter()
+    request_id = x_request_id if isinstance(x_request_id, str) else None
+    logger.info(
+        "GAME_TURN_STARTED action=%s campaign_id=%s request_id=%s",
+        (body.action or {}).get('type', 'none'),
+        body.campaign_id,
+        request_id or 'none',
+    )
     try:
-        return build_game_orchestrator().turn(body)
+        response = build_game_orchestrator().turn(body, request_id=request_id)
+        resolution = response.rule_resolution if hasattr(response, 'rule_resolution') else response['rule_resolution']
+        logger.info(
+            "GAME_TURN_COMPLETED resolution_status=%s duration_ms=%.1f request_id=%s",
+            resolution.get('status', 'unknown'),
+            (time.perf_counter() - started) * 1000,
+            request_id or 'none',
+        )
+        return response
     except InvalidGameAction as exc:
+        logger.warning(
+            "GAME_TURN_INVALID_ACTION duration_ms=%.1f error_type=%s request_id=%s",
+            (time.perf_counter() - started) * 1000,
+            type(exc).__name__,
+            request_id or 'none',
+        )
         raise HTTPException(status_code=422, detail='invalid structured action') from exc
     except RuleResolutionError as exc:
+        logger.warning(
+            "GAME_TURN_RULE_ERROR duration_ms=%.1f error_type=%s request_id=%s",
+            (time.perf_counter() - started) * 1000,
+            type(exc).__name__,
+            request_id or 'none',
+        )
         raise HTTPException(status_code=502, detail='invalid Rule Engine resolution') from exc
     except NarrationError as exc:
+        logger.warning(
+            "GAME_TURN_NARRATION_ERROR duration_ms=%.1f error_type=%s request_id=%s",
+            (time.perf_counter() - started) * 1000,
+            type(exc.__cause__).__name__ if exc.__cause__ else type(exc).__name__,
+            request_id or 'none',
+        )
         raise HTTPException(
             status_code=502,
             detail={

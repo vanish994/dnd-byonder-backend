@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+import logging
+import time
 from typing import Any, Protocol
 
 from google import genai
 from google.genai import types
 
 from services.narrator import NarratorError
+
+
+logger = logging.getLogger(__name__)
 
 
 class GeminiNarratorError(NarratorError):
@@ -63,6 +68,7 @@ class GeminiNarratorClient:
         player_input: str,
         rule_resolution: dict[str, Any],
         available_actions: list[dict[str, Any]] | None = None,
+        request_id: str | None = None,
     ) -> str:
         from game.narrator import build_narrator_content
 
@@ -72,6 +78,16 @@ class GeminiNarratorClient:
             player_input=player_input,
             rule_resolution=rule_resolution,
             available_actions=available_actions,
+        )
+        action = rule_resolution.get("action")
+        action_type = action.get("type") if isinstance(action, dict) else "none"
+        started = time.perf_counter()
+        logger.info(
+            "NARRATOR_REQUEST_STARTED provider=gemini model=%s action=%s campaign_id=%s request_id=%s",
+            self.model,
+            action_type,
+            campaign_id,
+            request_id or "none",
         )
         try:
             response = self.client.models.generate_content(
@@ -86,10 +102,35 @@ class GeminiNarratorClient:
                     ),
                 ),
             )
+        except TimeoutError as exc:
+            logger.warning(
+                "NARRATOR_TIMEOUT provider=gemini duration_ms=%.1f error_type=%s request_id=%s",
+                (time.perf_counter() - started) * 1000,
+                type(exc).__name__,
+                request_id or "none",
+            )
+            raise GeminiNarratorError("Gemini narrator request failed") from exc
         except Exception as exc:
+            logger.warning(
+                "NARRATOR_REQUEST_FAILED provider=gemini duration_ms=%.1f error_type=%s request_id=%s",
+                (time.perf_counter() - started) * 1000,
+                type(exc).__name__,
+                request_id or "none",
+            )
             raise GeminiNarratorError("Gemini narrator request failed") from exc
 
         text = getattr(response, "text", None)
         if not isinstance(text, str) or not text.strip():
+            logger.warning(
+                "NARRATOR_RESPONSE_PARSE_FAILED provider=gemini duration_ms=%.1f response_chars=0 request_id=%s",
+                (time.perf_counter() - started) * 1000,
+                request_id or "none",
+            )
             raise GeminiNarratorError("Gemini narrator returned empty content")
+        logger.info(
+            "NARRATOR_RESPONSE_PARSED provider=gemini duration_ms=%.1f response_chars=%d request_id=%s",
+            (time.perf_counter() - started) * 1000,
+            len(text.strip()),
+            request_id or "none",
+        )
         return text.strip()
