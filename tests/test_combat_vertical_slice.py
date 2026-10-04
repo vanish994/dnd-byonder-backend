@@ -590,6 +590,77 @@ class CombatVerticalSliceTests(unittest.TestCase):
             ["turn_end", "turn_start"],
         )
 
+    def test_until_end_of_turn_blocker_expires_before_next_turn(self):
+        state = {}
+        self.start(state)
+        player = state["combat"]["combatants"]["player"]
+        add_condition(
+            player,
+            condition_id="grappled",
+            duration={"kind": "until_end_of_turn"},
+            timing={
+                "applied_round": 1,
+                "applied_turn_index": 0,
+                "applied_phase": "turn_start",
+            },
+        )
+        self.assertEqual(player["movement_remaining"], 0)
+
+        self.apply(state, {"type": "end_turn", "actor_id": "player"})
+
+        self.assertEqual(player["conditions"], [])
+        self.assertEqual(player["movement_remaining"], 30)
+
+    def test_until_start_of_turn_blocker_expires_at_target_start(self):
+        state = {}
+        self.start(state)
+        goblin = state["combat"]["combatants"]["goblin-1"]
+        add_condition(
+            goblin,
+            condition_id="restrained",
+            duration={"kind": "until_start_of_turn"},
+            timing={
+                "applied_round": 1,
+                "applied_turn_index": 0,
+                "applied_phase": "turn_end",
+            },
+        )
+
+        self.apply(state, {"type": "end_turn", "actor_id": "player"})
+
+        self.assertEqual(goblin["conditions"], [])
+        self.assertEqual(goblin["movement_remaining"], 30)
+
+    def test_end_turn_skips_unconscious_actor_and_keeps_lifecycle_coherent(self):
+        state = {}
+        combatants = self.combatants()
+        combatants.insert(
+            1,
+            {
+                "id": "player-2",
+                "hp": 10,
+                "max_hp": 10,
+                "ac": 14,
+                "initiative_modifier": 1,
+                "position": 0,
+                "movement_speed": 30,
+                "side": "player",
+            },
+        )
+        self.start(state, initiative=(20, 10, 1), combatants=combatants)
+        player = state["combat"]["combatants"]["player"]
+        player["hp"] = 0
+        player["unconscious"] = True
+
+        result = self.apply(state, {"type": "end_turn", "actor_id": "player"})
+
+        self.assertEqual(result["outcome"]["current_actor_id"], "player-2")
+        self.assertEqual(state["combat"]["current_actor_id"], "player-2")
+        self.assertEqual(
+            state["combat"]["available_actions"],
+            [{"type": "move"}, {"type": "attack"}, {"type": "end_turn"}],
+        )
+
     def test_end_turn_wraps_and_starts_new_round(self):
         state = {}
         self.start(state)
