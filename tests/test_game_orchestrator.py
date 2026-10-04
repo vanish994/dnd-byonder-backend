@@ -36,6 +36,16 @@ class GameOrchestratorTests(unittest.TestCase):
         self.narrator.narrate.assert_called_once()
         self.assertEqual(response.state, {"hp": 12})
 
+    def test_narrator_failure_on_free_text_keeps_needs_validation_status(self):
+        self.narrator.narrate.side_effect = NarratorError("HTTP 503")
+        request = GameTurnRequest(player_input="Observo o ambiente.")
+
+        response = self.orchestrator.turn(request)
+
+        self.assertEqual(response.rule_resolution["status"], "needs_rule_validation")
+        self.assertEqual(response.narration_status, "unavailable")
+        self.assertEqual(response.narration, "A narração está temporariamente indisponível.")
+
     def test_valid_structured_action_is_forwarded_unchanged(self):
         action = {"type": "ability_check", "ability": "strength", "dc": 15, "modifier": 3}
         request = GameTurnRequest(

@@ -62,7 +62,10 @@ class GameOrchestrator:
                 request_id=request_id,
             )
         except NarratorError:
-            narration = "A resolução mecânica foi concluída, mas a narração está temporariamente indisponível."
+            if resolution.get("status") == "resolved":
+                narration = "A resolução mecânica foi concluída, mas a narração está temporariamente indisponível."
+            else:
+                narration = "A narração está temporariamente indisponível."
             narration_status = "unavailable"
         else:
             narration_status = "available"
