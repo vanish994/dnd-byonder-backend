@@ -7,8 +7,10 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field, StrictInt, StrictStr, model_validator
 
 from game.contracts import GuidedCharacterRequest
+from rule_engine.classes import class_definition, class_features, class_resource_maximum, class_resource_recovery
 from rule_engine.dice import MAX_MODIFIER
 from rule_engine.equipment import WEAPON_CATALOG, equipped_definition, validate_inventory
+from rule_engine.progression import MAX_LEVEL, experience_for_level, proficiency_bonus_for_level, validate_experience_points
 from rule_engine.resources import validate_resources
 
 ABILITIES = (
@@ -41,10 +43,9 @@ SKILL_TO_ABILITY = {
     "survival": "wisdom",
 }
 
-CLASS_HIT_DIE = {"fighter": 10}
 # Guided creation is deliberately narrower than the existing Character and combat models.
 STANDARD_ARRAY = (15, 14, 13, 12, 10, 8)
-FIGHTER_LEVELS = (1,)
+FIGHTER_LEVELS = tuple(range(1, MAX_LEVEL + 1))
 FIGHTER_SKILL_COUNT = 2
 # 2024 Fighter proficiency choices: https://www.dndbeyond.com/classes/2190879-fighter
 FIGHTER_SKILLS = (
@@ -118,13 +119,11 @@ def ability_modifier(score: int) -> int:
 
 
 def proficiency_bonus(level: int) -> int:
-    if level < 1 or level > 20:
-        raise ValueError("level must be between 1 and 20")
-    return 2 + ((level - 1) // 4)
+    return proficiency_bonus_for_level(level)
 
 
 class ClassFoundation(BaseModel):
-    id: Literal["fighter"]
+    id: StrictStr = Field(min_length=1, max_length=64)
     level: StrictInt = Field(ge=1, le=20)
 
     class Config:
@@ -194,6 +193,7 @@ class Character(BaseModel):
     id: StrictStr = Field(min_length=1, max_length=64)
     name: StrictStr | None = Field(default=None, min_length=1, max_length=64)
     level: StrictInt = Field(ge=1, le=20)
+    experience_points: StrictInt = Field(default=0, ge=0)
     abilities: dict[str, StrictInt]
     class_: ClassFoundation = Field(alias="class")
     proficiencies: Proficiencies = Field(default_factory=Proficiencies)
@@ -202,6 +202,7 @@ class Character(BaseModel):
     equipped: dict[str, str | None] = Field(default_factory=lambda: {"weapon": None, "armor": None})
     resources: dict[str, Any] = Field(default_factory=dict)
     conditions: list[dict[str, Any]] = Field(default_factory=list)
+    class_features: list[StrictStr] = Field(default_factory=list)
     current_hp: StrictInt | None = Field(default=None, ge=0)
 
     @model_validator(mode="before")
@@ -218,6 +219,7 @@ class Character(BaseModel):
         data.setdefault("equipped", {"weapon": None, "armor": None})
         data.setdefault("resources", {})
         data.setdefault("conditions", [])
+        data.setdefault("class_features", [])
         return data
 
     @model_validator(mode="after")
@@ -231,10 +233,15 @@ class Character(BaseModel):
                 raise ValueError(f"ability score out of range: {ability}")
         if self.class_.level != self.level:
             raise ValueError("class level must match character level")
-        if self.current_hp is not None and self.current_hp > self.derived()["hp"]["max"]:
-            raise ValueError("current_hp cannot exceed derived max HP")
+        class_definition(self.class_.id)
+        validate_experience_points(self.experience_points)
+        expected_features = class_features(self.class_.id, self.level)
+        if self.class_features and self.class_features != expected_features:
+            raise ValueError("class features do not match class level")
         validate_inventory({"inventory": self.inventory, "equipped": self.equipped})
         validate_resources({"resources": self.resources})
+        if self.current_hp is not None and self.current_hp > self.derived()["hp"]["max"]:
+            raise ValueError("current_hp cannot exceed derived max HP")
         return self
 
     def derived(self) -> dict[str, Any]:
@@ -248,7 +255,10 @@ class Character(BaseModel):
             ability: modifiers[ability] + (prof if self.proficiencies.saving_throws.get(ability, False) else 0)
             for ability in ABILITIES
         }
-        max_hp = CLASS_HIT_DIE[self.class_.id] + modifiers["constitution"]
+        class_data = class_definition(self.class_.id)
+        first_level_hp = class_data["hit_die"] + modifiers["constitution"]
+        later_level_hp = max(1, class_data["fixed_hp_per_level"] + modifiers["constitution"])
+        max_hp = first_level_hp + ((self.level - 1) * later_level_hp)
         current_hp = max_hp if self.current_hp is None else self.current_hp
         weapons = {}
         for weapon_id, weapon in self.weapons.items():
@@ -306,11 +316,13 @@ def character_to_state(character: Character) -> dict[str, Any]:
     state = {
         "id": character.id,
         "level": character.level,
+        "experience_points": character.experience_points,
         "class": character.class_.model_dump(),
         "abilities": dict(character.abilities),
         "proficiencies": character.proficiencies.model_dump(),
         "weapons": {key: value.model_dump() for key, value in character.weapons.items()},
         "current_hp": character.current_hp,
+        "class_features": list(character.class_features),
     }
     if character.inventory:
         state["inventory"] = character.inventory
@@ -348,6 +360,7 @@ def build_guided_character(selection: GuidedCharacterRequest) -> Character:
         "id": f"character-{uuid.uuid4().hex}",
         "name": selection.name,
         "level": selection.level,
+        "experience_points": experience_for_level(selection.level),
         "class": {"id": selection.class_id, "level": selection.level},
         "abilities": dict(selection.abilities),
         "proficiencies": {
@@ -363,6 +376,15 @@ def build_guided_character(selection: GuidedCharacterRequest) -> Character:
             }
         },
         "equipped": {"weapon": selection.weapon_id, "armor": None},
+        "class_features": class_features(selection.class_id, selection.level),
+        "resources": {
+            "second_wind": {
+                "id": "second_wind",
+                "current": class_resource_maximum(selection.class_id, "second_wind", selection.level),
+                "maximum": class_resource_maximum(selection.class_id, "second_wind", selection.level),
+                "recovery": class_resource_recovery(selection.class_id, "second_wind"),
+            },
+        },
     }
     character = Character.model_validate(character_data)
     return Character.model_validate({**character_data, "current_hp": character.derived()["hp"]["max"]})

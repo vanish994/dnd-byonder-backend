@@ -48,13 +48,13 @@ class CharacterCreationTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         options = response.json()
         self.assertEqual(options["schema_version"], "character-options-v1")
-        self.assertEqual(options["levels"], [1])
+        self.assertEqual(options["levels"], list(range(1, 21)))
         self.assertEqual(options["standard_array"], [15, 14, 13, 12, 10, 8])
         self.assertEqual([item["id"] for item in options["abilities"]], list(VALID_SELECTION["abilities"]))
         self.assertTrue(all(item["label"] and item["description"] for item in options["abilities"]))
         self.assertEqual([item["id"] for item in options["classes"]], ["fighter"])
         fighter = options["classes"][0]
-        self.assertEqual(fighter["levels"], [1])
+        self.assertEqual(fighter["levels"], list(range(1, 21)))
         self.assertEqual(fighter["skill_choices"]["count"], 2)
         self.assertEqual(set(fighter["skill_choices"]["options"]), {
             "acrobatics", "animal_handling", "athletics", "history", "insight",
@@ -158,7 +158,7 @@ class CharacterCreationTests(unittest.TestCase):
         self.assertEqual(first_turn.state["character"], created["character"])
         self.assertEqual(first_turn.state["combat"]["current_actor_id"], character_id)
         self.assertEqual(first_turn.state["combat"]["combatants"][character_id]["hp"], 11)
-        self.assertEqual(first_turn.available_actions, [{"type": "move"}, {"type": "attack"}, {"type": "end_turn"}])
+        self.assertEqual(first_turn.available_actions, [{"type": "move"}, {"type": "attack"}, {"type": "second_wind"}, {"type": "end_turn"}])
         with patch.object(api, "roll_dice", side_effect=[{"rolls": [15]}, {"rolls": [5]}]):
             attack_turn = session.turn(GameTurnRequest(
                 campaign_id=created["campaign_id"], state=first_turn.state,
@@ -172,12 +172,12 @@ class CharacterCreationTests(unittest.TestCase):
         self.assertEqual(attack_turn.rule_resolution["check"]["damage"], {"dice": "1d8", "modifier": 2})
         self.assertEqual(attack_turn.rule_resolution["outcome"]["damage"], 7)
         self.assertEqual(attack_turn.state["combat"]["combatants"]["goblin"]["hp"], 5)
-        self.assertEqual(attack_turn.available_actions, [{"type": "move"}, {"type": "end_turn"}])
+        self.assertEqual(attack_turn.available_actions, [{"type": "move"}, {"type": "second_wind"}, {"type": "end_turn"}])
 
     def test_both_routes_reject_invalid_catalog_selections_and_forged_fields(self):
         cases = {
             "class": {"class_id": "wizard"},
-            "level": {"level": 2},
+            "level": {"level": 21},
             "wrong_ability": {"abilities": {**VALID_SELECTION["abilities"], "arcana": 15}},
             "missing_ability": {"abilities": {key: score for key, score in VALID_SELECTION["abilities"].items() if key != "wisdom"}},
             "invalid_array_duplicate": {"abilities": {**VALID_SELECTION["abilities"], "wisdom": 15}},

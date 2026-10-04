@@ -26,6 +26,7 @@ from game.orchestrator import (
     NarrationError,
     RuleResolutionError,
 )
+from rule_engine.classes import class_features, class_resource_maximum, class_resource_recovery
 from rule_engine.conditions import (
     advance_condition_durations,
     clear_conditions_for_rest,
@@ -36,6 +37,7 @@ from rule_engine.conditions import (
 )
 from rule_engine.dice import MAX_MODIFIER, DiceExpressionError, roll_dice
 from rule_engine.equipment import add_item, equip_item, remove_item, unequip_item
+from rule_engine.progression import level_up_available, next_level_experience
 from rule_engine.resources import consume_resource, define_resource, recover_for_rest, recover_for_turn, recover_resource
 from rule_engine.character import (
     SKILL_TO_ABILITY,
@@ -249,6 +251,31 @@ class ResourceAction(BaseModel):
         extra = 'forbid'
 
 
+class ExperienceAction(BaseModel):
+    type: Literal['add_experience']
+    amount: StrictInt = Field(gt=0)
+    character_id: StrictStr | None = None
+
+    class Config:
+        extra = 'forbid'
+
+
+class LevelUpAction(BaseModel):
+    type: Literal['level_up']
+    character_id: StrictStr | None = None
+
+    class Config:
+        extra = 'forbid'
+
+
+class SecondWindAction(BaseModel):
+    type: Literal['second_wind']
+    actor_id: StrictStr = Field(min_length=1, max_length=64)
+
+    class Config:
+        extra = 'forbid'
+
+
 class InventoryAction(BaseModel):
     type: Literal['add_item', 'remove_item', 'equip_item', 'unequip_item']
     item_id: StrictStr | None = Field(default=None, min_length=1, max_length=64)
@@ -301,7 +328,7 @@ class SkillCheckAction(BaseModel):
 
 
 class ResolveRequest(BaseModel):
-    action: TextAction | CreateCharacterAction | SkillCheckAction | AbilityCheckAction | SavingThrowAction | AttackAction | StartCombatAction | MoveAction | EndTurnAction | RestAction | ResourceAction | InventoryAction
+    action: TextAction | CreateCharacterAction | SkillCheckAction | AbilityCheckAction | SavingThrowAction | AttackAction | StartCombatAction | MoveAction | EndTurnAction | RestAction | ResourceAction | ExperienceAction | LevelUpAction | SecondWindAction | InventoryAction
     state: dict[str, Any] = Field(default_factory=dict)
     rule_ids: list[str] = Field(default_factory=list)
 
@@ -759,6 +786,10 @@ def _combat_available_actions(combat: dict[str, Any]) -> list[dict[str, str]]:
         actions.append({'type': 'move'})
     if actor.get('action_available'):
         actions.append({'type': 'attack'})
+    character = actor.get('character')
+    second_wind = character.get('resources', {}).get('second_wind') if isinstance(character, dict) else None
+    if actor.get('bonus_action_available') and isinstance(second_wind, dict) and second_wind.get('current', 0) > 0:
+        actions.append({'type': 'second_wind'})
     actions.append({'type': 'end_turn'})
     return actions
 
@@ -927,6 +958,90 @@ def resolve_rest(body: ResolveRequest) -> dict[str, Any]:
             'resources_recovered': recovered,
             'hp_before': hp_before,
             'hp_after': character.get('current_hp'),
+        },
+    )
+
+
+def resolve_add_experience(body: ResolveRequest) -> dict[str, Any]:
+    action = body.action
+    if not isinstance(action, ExperienceAction):
+        raise TypeError('resolve_add_experience requires a validated action')
+    character_state = _mutable_character_state(body.state, action.character_id)
+    character = Character.model_validate(character_state)
+    character_state['experience_points'] = character.experience_points + action.amount
+    updated = Character.model_validate(character_state)
+    threshold = next_level_experience(updated.level)
+    return _character_resolution(
+        {'type': 'add_experience', 'character_id': updated.id},
+        {
+            'character_id': updated.id,
+            'experience_points': updated.experience_points,
+            'level': updated.level,
+            'level_up_available': level_up_available(updated.level, updated.experience_points),
+            'next_level_experience': threshold,
+        },
+    )
+
+
+def _sync_class_resources(character_state: dict[str, Any], character: Character) -> None:
+    resources = character_state.setdefault('resources', {})
+    if not isinstance(resources, dict):
+        raise ValueError('resources must be an object')
+    resource_id = 'second_wind'
+    maximum = class_resource_maximum(character.class_.id, resource_id, character.level)
+    recovery = class_resource_recovery(character.class_.id, resource_id)
+    existing = resources.get(resource_id)
+    if existing is None:
+        current = maximum
+    else:
+        if not isinstance(existing, dict):
+            raise ValueError('class resource must be an object')
+        old_maximum = existing.get('maximum')
+        old_current = existing.get('current')
+        if not isinstance(old_maximum, int) or not isinstance(old_current, int):
+            raise ValueError('class resource has invalid counters')
+        current = maximum if old_current == old_maximum else min(old_current, maximum)
+    resources[resource_id] = {
+        'id': resource_id,
+        'current': current,
+        'maximum': maximum,
+        'recovery': recovery,
+    }
+
+
+def resolve_level_up(body: ResolveRequest) -> dict[str, Any]:
+    action = body.action
+    if not isinstance(action, LevelUpAction):
+        raise TypeError('resolve_level_up requires a validated action')
+    character_state = _mutable_character_state(body.state, action.character_id)
+    character = Character.model_validate(character_state)
+    if not level_up_available(character.level, character.experience_points):
+        raise ValueError('level up is not available')
+    old_level = character.level
+    old_derived = character.derived()
+    old_current_hp = character.current_hp
+    old_max_hp = old_derived['hp']['max']
+    new_level = old_level + 1
+    character_state['level'] = new_level
+    character_state['class'] = {**character_state['class'], 'level': new_level}
+    character_state['class_features'] = class_features(character.class_.id, new_level)
+    new_preview = Character.model_validate(character_state)
+    hp_gain = new_preview.derived()['hp']['max'] - old_max_hp
+    if old_current_hp is not None and old_current_hp == old_max_hp:
+        character_state['current_hp'] = old_current_hp + hp_gain
+    _sync_class_resources(character_state, new_preview)
+    updated = Character.model_validate(character_state)
+    return _character_resolution(
+        {'type': 'level_up', 'character_id': updated.id},
+        {
+            'character_id': updated.id,
+            'previous_level': old_level,
+            'level': updated.level,
+            'experience_points': updated.experience_points,
+            'hp_gain': hp_gain,
+            'derived': updated.derived(),
+            'class_features': list(updated.class_features),
+            'resources': updated.resources,
         },
     )
 
@@ -1192,6 +1307,45 @@ def resolve_move(body: ResolveRequest) -> dict[str, Any]:
     )
 
 
+def resolve_second_wind(
+    body: ResolveRequest,
+    *,
+    randbelow: Callable[[int], int] | None = None,
+) -> dict[str, Any]:
+    action = body.action
+    if not isinstance(action, SecondWindAction):
+        raise TypeError('resolve_second_wind requires a validated action')
+    combat = _require_combat(body.state)
+    actor = _require_bonus_action(combat, action.actor_id)
+    character_state = actor.get('character')
+    if not isinstance(character_state, dict):
+        raise ValueError('second wind requires a character-backed combatant')
+    character = Character.model_validate(character_state)
+    resource = character.resources.get('second_wind')
+    if not isinstance(resource, dict):
+        raise ValueError('second wind resource is not available')
+    consumed = consume_resource(character_state, 'second_wind')
+    roll = roll_dice('1d10', randbelow=randbelow)
+    healing = int(roll['total']) + character.level
+    hp_before = actor['hp']
+    actor['hp'] = min(actor['max_hp'], actor['hp'] + healing)
+    actor['bonus_action_available'] = False
+    character_state['current_hp'] = actor['hp']
+    combat['available_actions'] = _combat_available_actions(combat)
+    return _combat_resolution(
+        {'type': 'second_wind', 'actor_id': action.actor_id},
+        check={'resource': consumed['id'], 'level': character.level},
+        rolls=[roll],
+        outcome={
+            'healing': actor['hp'] - hp_before,
+            'hp_before': hp_before,
+            'hp_after': actor['hp'],
+            'resource_current': consumed['current'],
+        },
+        rules_used=['fighter.second_wind.v2024'],
+    )
+
+
 def resolve_combat_attack(
     body: ResolveRequest,
     *,
@@ -1402,6 +1556,12 @@ def resolve_request(
             return resolve_rest(body)
         if isinstance(body.action, ResourceAction):
             return resolve_resource(body)
+        if isinstance(body.action, ExperienceAction):
+            return resolve_add_experience(body)
+        if isinstance(body.action, LevelUpAction):
+            return resolve_level_up(body)
+        if isinstance(body.action, SecondWindAction):
+            return resolve_second_wind(body, randbelow=randbelow)
         if isinstance(body.action, InventoryAction):
             return resolve_inventory(body)
         if isinstance(body.action, AbilityCheckAction):
