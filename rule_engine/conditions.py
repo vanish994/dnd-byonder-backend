@@ -163,9 +163,7 @@ def normalize_conditions(value: Any) -> list[dict[str, Any]]:
 
 
 def get_conditions(creature: dict[str, Any]) -> list[dict[str, Any]]:
-    conditions = normalize_conditions(creature.get("conditions"))
-    creature["conditions"] = conditions
-    return conditions
+    return normalize_conditions(creature.get("conditions"))
 
 
 def has_condition(creature: dict[str, Any], condition_id: str) -> bool:
@@ -212,6 +210,7 @@ def add_condition(
 
     conditions = get_conditions(creature)
     conditions.append(condition)
+    creature["conditions"] = conditions
 
     return condition
 
@@ -226,7 +225,6 @@ def remove_condition(
     conditions = get_conditions(creature)
 
     before = len(conditions)
-
     creature["conditions"] = [
         condition
         for condition in conditions
@@ -246,7 +244,9 @@ def remove_condition_instance(
     if condition_index < 0 or condition_index >= len(conditions):
         raise ValueError("condition index out of range")
 
-    return conditions.pop(condition_index)
+    removed = conditions.pop(condition_index)
+    creature["conditions"] = conditions
+    return removed
 
 
 def _cursor(timing: dict[str, Any]) -> tuple[int, int]:

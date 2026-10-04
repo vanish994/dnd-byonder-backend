@@ -19,6 +19,13 @@ class ConditionTests(unittest.TestCase):
         self.assertEqual(normalize_conditions(creature.get("conditions")), [])
         self.assertFalse(has_condition(creature, "poisoned"))
 
+    def test_condition_read_does_not_normalize_or_mutate_state(self):
+        creature = {"conditions": [{"id": "poisoned"}]}
+
+        self.assertTrue(has_condition(creature, "poisoned"))
+
+        self.assertEqual(creature, {"conditions": [{"id": "poisoned"}]})
+
     def test_add_condition_creates_structured_instance(self):
         creature = {}
 

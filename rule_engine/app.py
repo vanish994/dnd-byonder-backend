@@ -4,6 +4,7 @@ import sqlite3
 import logging
 import time
 import uuid
+from copy import deepcopy
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Literal
@@ -1213,31 +1214,53 @@ def resolve_request(
     *,
     randbelow: Callable[[int], int] | None = None,
 ):
-    if isinstance(body.action, CreateCharacterAction):
-        return resolve_create_character(body)
-    if isinstance(body.action, SkillCheckAction):
-        return resolve_skill_check(body, randbelow=randbelow)
-    if isinstance(body.action, StartCombatAction):
-        return resolve_start_combat(body, randbelow=randbelow)
-    if isinstance(body.action, MoveAction):
-        return resolve_move(body)
-    if isinstance(body.action, EndTurnAction):
-        return resolve_end_turn(body)
-    if isinstance(body.action, AbilityCheckAction):
-        return resolve_explicit_action(body, randbelow=randbelow)
-    if isinstance(body.action, SavingThrowAction):
-        return resolve_saving_throw(body, randbelow=randbelow)
-    if isinstance(body.action, AttackAction):
-        if body.action.actor_id is not None:
-            return resolve_combat_attack(body, randbelow=randbelow)
-        return resolve_attack(body, randbelow=randbelow)
+    original_state = deepcopy(body.state)
+    try:
+        if isinstance(body.action, CreateCharacterAction):
+            return resolve_create_character(body)
+        if isinstance(body.action, SkillCheckAction):
+            return resolve_skill_check(body, randbelow=randbelow)
+        if isinstance(body.action, StartCombatAction):
+            return resolve_start_combat(body, randbelow=randbelow)
+        if isinstance(body.action, MoveAction):
+            return resolve_move(body)
+        if isinstance(body.action, EndTurnAction):
+            return resolve_end_turn(body)
+        if isinstance(body.action, AbilityCheckAction):
+            return resolve_explicit_action(body, randbelow=randbelow)
+        if isinstance(body.action, SavingThrowAction):
+            return resolve_saving_throw(body, randbelow=randbelow)
+        if isinstance(body.action, AttackAction):
+            if body.action.actor_id is not None:
+                return resolve_combat_attack(body, randbelow=randbelow)
+            return resolve_attack(body, randbelow=randbelow)
 
-    # Text-only and unsupported actions remain fail-closed; KB candidates are evidence, not executable rules.
-    return {
-        'schema_version': RULE_RESOLUTION_SCHEMA_VERSION,
-        'status': 'needs_rule_validation',
-        'reason': 'No deterministic resolution was emitted because the requested rule has not been bound to a validated mechanic.',
-    }
+        # Text-only and unsupported actions remain fail-closed; KB candidates are evidence, not executable rules.
+        return {
+            'schema_version': RULE_RESOLUTION_SCHEMA_VERSION,
+            'status': 'needs_rule_validation',
+            'reason': 'No deterministic resolution was emitted because the requested rule has not been bound to a validated mechanic.',
+        }
+    except Exception:
+        _restore_state_in_place(body.state, original_state)
+        raise
+
+
+def _restore_state_in_place(state: dict[str, Any], snapshot: dict[str, Any]) -> None:
+    def restore(current: Any, saved: Any) -> None:
+        if isinstance(current, dict) and isinstance(saved, dict):
+            for key in list(current):
+                if key not in saved:
+                    del current[key]
+            for key, value in saved.items():
+                if key in current and isinstance(current[key], (dict, list)) and isinstance(value, type(current[key])):
+                    restore(current[key], value)
+                else:
+                    current[key] = deepcopy(value)
+        elif isinstance(current, list) and isinstance(saved, list):
+            current[:] = [deepcopy(value) for value in saved]
+
+    restore(state, snapshot)
 
 
 def resolve_explicit_action(

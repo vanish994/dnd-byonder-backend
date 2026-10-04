@@ -1,4 +1,5 @@
 import unittest
+from copy import deepcopy
 
 from game.contracts import GameTurnResponse
 import rule_engine.app as api
@@ -213,6 +214,79 @@ class CombatVerticalSliceTests(unittest.TestCase):
         before = state.copy()
         with self.assertRaises(ValueError):
             self.apply(state, {"type": "move", "actor_id": "player", "distance": 31})
+        self.assertEqual(state, before)
+
+    def test_invalid_move_does_not_normalize_conditions_before_failure(self):
+        state = {}
+        self.start(state)
+        state["combat"]["combatants"]["player"]["conditions"] = [
+            {"id": "poisoned"}
+        ]
+        before = deepcopy(state)
+
+        with self.assertRaisesRegex(ValueError, "movement exceeds remaining movement"):
+            self.apply(state, {"type": "move", "actor_id": "player", "distance": 31})
+
+        self.assertEqual(state, before)
+
+    def test_invalid_target_does_not_consume_action_or_mutate_state(self):
+        state = {}
+        self.start(state)
+        before = deepcopy(state)
+
+        with self.assertRaisesRegex(ValueError, "target does not exist"):
+            self.apply(
+                state,
+                {
+                    "type": "attack",
+                    "actor_id": "player",
+                    "target_id": "missing",
+                    "attack_bonus": 5,
+                    "damage": {"dice": "1d8", "modifier": 3},
+                },
+            )
+
+        self.assertEqual(state, before)
+
+    def test_invalid_end_turn_actor_does_not_mutate_initiative(self):
+        state = {}
+        self.start(state)
+        before = deepcopy(state)
+
+        with self.assertRaisesRegex(ValueError, "actor is not the current actor"):
+            self.apply(state, {"type": "end_turn", "actor_id": "goblin-1"})
+
+        self.assertEqual(state, before)
+
+    def test_invalid_hp_does_not_replace_existing_state(self):
+        state = {"sentinel": "preserve"}
+        body = api.ResolveRequest(
+            action={
+                "type": "start_combat",
+                "combatants": [
+                    {
+                        "id": "player",
+                        "hp": 9,
+                        "max_hp": 8,
+                        "ac": 16,
+                        "initiative_modifier": 3,
+                    },
+                    {
+                        "id": "goblin-1",
+                        "hp": 7,
+                        "max_hp": 7,
+                        "ac": 13,
+                        "initiative_modifier": 2,
+                    },
+                ],
+            },
+            state=state,
+        )
+        before = deepcopy(state)
+
+        with self.assertRaisesRegex(ValueError, "hp must be between zero and max_hp"):
+            api.resolve_request(body)
+
         self.assertEqual(state, before)
 
     def test_move_consumes_exact_remaining_movement(self):
