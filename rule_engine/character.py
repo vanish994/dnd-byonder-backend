@@ -6,8 +6,21 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, StrictInt, StrictStr, model_validator
 
-from game.contracts import GuidedCharacterRequest
+from game.contracts import GuidedCharacterRequest, PHB2024GuidedCharacterRequest
 from rule_engine.classes import class_definition, class_features, class_resource_maximum, class_resource_recovery, class_resource_recovery_amount
+from rule_engine.character_creation_catalog import (
+    ABILITY_IDS,
+    BACKGROUND_RECORDS,
+    CLASS_RECORDS,
+    CLASS_RUNTIME_DEFINITIONS,
+    PHB2024_CATALOG,
+    SPECIES_RECORDS,
+    background_definition,
+    validate_ability_assignment,
+    validate_background_ability_increases,
+    validate_equipment_package_choice,
+    validate_species_choices,
+)
 from rule_engine.dice import MAX_MODIFIER
 from rule_engine.equipment import WEAPON_CATALOG, equipped_definition, validate_inventory
 from rule_engine.progression import MAX_LEVEL, experience_for_level, proficiency_bonus_for_level, validate_experience_points
@@ -204,6 +217,19 @@ class Character(BaseModel):
     resources: dict[str, Any] = Field(default_factory=dict)
     conditions: list[dict[str, Any]] = Field(default_factory=list)
     class_features: list[StrictStr] = Field(default_factory=list)
+    species_id: StrictStr | None = None
+    species_choices: dict[StrictStr, StrictStr] = Field(default_factory=dict)
+    background_id: StrictStr | None = None
+    alignment_id: StrictStr | None = None
+    ability_method_id: StrictStr | None = None
+    base_abilities: dict[StrictStr, StrictInt] = Field(default_factory=dict)
+    background_ability_increases: dict[StrictStr, StrictInt] = Field(default_factory=dict)
+    class_skill_choices: list[StrictStr] = Field(default_factory=list)
+    species_skill_choices: list[StrictStr] = Field(default_factory=list)
+    languages: list[StrictStr] = Field(default_factory=list)
+    class_choices: dict[StrictStr, StrictStr] = Field(default_factory=dict)
+    starting_equipment: dict[str, Any] = Field(default_factory=dict)
+    origin_feat: dict[str, Any] = Field(default_factory=dict)
     current_hp: StrictInt | None = Field(default=None, ge=0)
 
     @model_validator(mode="before")
@@ -221,6 +247,15 @@ class Character(BaseModel):
         data.setdefault("resources", {})
         data.setdefault("conditions", [])
         data.setdefault("class_features", [])
+        data.setdefault("species_choices", {})
+        data.setdefault("base_abilities", {})
+        data.setdefault("background_ability_increases", {})
+        data.setdefault("class_skill_choices", [])
+        data.setdefault("species_skill_choices", [])
+        data.setdefault("languages", [])
+        data.setdefault("class_choices", {})
+        data.setdefault("starting_equipment", {})
+        data.setdefault("origin_feat", {})
         return data
 
     @model_validator(mode="after")
@@ -237,12 +272,91 @@ class Character(BaseModel):
         class_definition(self.class_.id)
         validate_experience_points(self.experience_points)
         class_data = class_definition(self.class_.id)
+        if self.level > class_data.get("max_supported_level", MAX_LEVEL):
+            raise ValueError("class progression is not implemented at this level")
         selected_skills = {skill for skill, proficient in self.proficiencies.skills.items() if proficient}
         allowed_skills = set(class_data["skill_proficiencies"]["options"])
-        if not selected_skills <= allowed_skills:
-            raise ValueError("character has a skill proficiency not granted by class")
-        if len(selected_skills) > class_data["skill_proficiencies"]["count"]:
-            raise ValueError("character has too many class skill proficiencies")
+        if self.species_id is None and self.background_id is None:
+            if self.class_.id != "fighter":
+                raise ValueError("non-Fighter classes require complete PHB 2024 character creation metadata")
+            if not selected_skills <= allowed_skills:
+                raise ValueError("character has a skill proficiency not granted by class")
+            if len(selected_skills) > class_data["skill_proficiencies"]["count"]:
+                raise ValueError("character has too many class skill proficiencies")
+        else:
+            if self.species_id not in SPECIES_RECORDS or self.background_id not in BACKGROUND_RECORDS:
+                raise ValueError("species and background must come from the PHB 2024 catalog")
+            if self.level != 1:
+                raise ValueError("PHB 2024 guided creation currently supports level 1 only")
+            if self.alignment_id not in {
+                "lawful_good", "neutral_good", "chaotic_good", "lawful_neutral", "neutral",
+                "chaotic_neutral", "lawful_evil", "neutral_evil", "chaotic_evil",
+            }:
+                raise ValueError("alignment must be one of the PHB 2024 options")
+            if self.ability_method_id is None or set(self.base_abilities) != set(ABILITY_IDS):
+                raise ValueError("PHB 2024 ability generation details are required")
+            validate_ability_assignment(self.ability_method_id, self.base_abilities)
+            validate_background_ability_increases(
+                self.background_id, self.background_ability_increases,
+                self.base_abilities, self.abilities,
+            )
+            normalized_species_choices = validate_species_choices(self.species_id, self.species_choices)
+            if normalized_species_choices != self.species_choices:
+                raise ValueError("species choices must use canonical PHB 2024 option ids")
+            if self.class_choices:
+                raise ValueError("class-specific selections are not part of this creation payload yet")
+            class_skill_choices = list(self.class_skill_choices)
+            if len(class_skill_choices) != class_data["skill_proficiencies"]["count"]:
+                raise ValueError("incorrect number of PHB 2024 class skill choices")
+            if len(set(class_skill_choices)) != len(class_skill_choices) or not set(class_skill_choices) <= allowed_skills:
+                raise ValueError("class skill choices must be unique options granted by the selected class")
+            background_skills = set(background_definition(self.background_id)["skill_proficiencies"])
+            species_skills = set()
+            if self.species_id == "human":
+                species_skills.add(self.species_choices["skillful_skill"])
+            elif self.species_id == "elf":
+                species_skills.add(self.species_choices["keen_senses_skill"])
+            if set(self.species_skill_choices) != species_skills:
+                raise ValueError("species skill proficiencies must match the selected PHB 2024 species choices")
+            expected_skills = set(class_skill_choices) | background_skills | species_skills
+            if selected_skills != expected_skills:
+                raise ValueError("skill proficiencies must match class, background, and species choices")
+            language_rules = PHB2024_CATALOG["language_rules"]
+            language_options = {option["id"] for option in language_rules["additional_options"]}
+            if (
+                len(self.languages) != language_rules["additional_choice_count"] + len(language_rules["required"])
+                or len(set(self.languages)) != len(self.languages)
+                or not set(language_rules["required"]).issubset(self.languages)
+                or not set(self.languages).issubset(language_options | set(language_rules["required"]))
+            ):
+                raise ValueError("languages must include Common and exactly two distinct PHB 2024 choices")
+            class_package = validate_equipment_package_choice(
+                CLASS_RUNTIME_DEFINITIONS[self.class_.id]["starting_equipment"],
+                self.starting_equipment.get("class_option", ""), source="class",
+            )
+            background_package_source = BACKGROUND_RECORDS[self.background_id]["equipment_packages"]
+            background_package = validate_equipment_package_choice(
+                background_package_source,
+                self.starting_equipment.get("background_option", ""), source="background",
+            )
+            expected_items = class_package["items"] + background_package["items"]
+            expected_gold = class_package["gold_gp"] + background_package["gold_gp"]
+            if self.starting_equipment != {
+                "class_option": self.starting_equipment.get("class_option"),
+                "background_option": self.starting_equipment.get("background_option"),
+                "class_package": class_package,
+                "background_package": background_package,
+                "items": expected_items,
+                "gold_gp": expected_gold,
+            }:
+                raise ValueError("starting equipment must match the selected PHB 2024 packages")
+            expected_origin_feat = background_definition(self.background_id)
+            if self.origin_feat != {
+                "id": expected_origin_feat["origin_feat_id"],
+                "name": expected_origin_feat["origin_feat"],
+                "label_pt_br": expected_origin_feat["origin_feat_label_pt_br"],
+            }:
+                raise ValueError("origin feat must match the selected PHB 2024 background")
         expected_saves = set(class_data["saving_throw_proficiencies"])
         actual_saves = {ability for ability, proficient in self.proficiencies.saving_throws.items() if proficient}
         if actual_saves != expected_saves:
@@ -356,6 +470,30 @@ def character_to_state(character: Character) -> dict[str, Any]:
         state["conditions"] = character.conditions
     if character.name is not None:
         state["name"] = character.name
+    if character.species_id is not None:
+        state["species_id"] = character.species_id
+        state["species_choices"] = dict(character.species_choices)
+    if character.background_id is not None:
+        state["background_id"] = character.background_id
+        state["origin_feat"] = dict(character.origin_feat)
+    if character.alignment_id is not None:
+        state["alignment_id"] = character.alignment_id
+    if character.ability_method_id is not None:
+        state["ability_generation"] = {
+            "method_id": character.ability_method_id,
+            "base_abilities": dict(character.base_abilities),
+            "background_increases": dict(character.background_ability_increases),
+        }
+    if character.class_skill_choices:
+        state["class_skill_choices"] = list(character.class_skill_choices)
+    if character.species_skill_choices:
+        state["species_skill_choices"] = list(character.species_skill_choices)
+    if character.languages:
+        state["languages"] = list(character.languages)
+    if character.class_choices:
+        state["class_choices"] = dict(character.class_choices)
+    if character.starting_equipment:
+        state["starting_equipment"] = character.starting_equipment
     return state
 
 

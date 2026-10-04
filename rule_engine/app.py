@@ -19,6 +19,7 @@ from game.contracts import (
     GameTurnRequest,
     GameTurnResponse,
     GuidedCharacterRequest,
+    PHB2024GuidedCharacterRequest,
 )
 from game.orchestrator import (
     GameOrchestrator,
@@ -47,6 +48,8 @@ from rule_engine.character import (
     character_to_state,
     derive_character,
 )
+from rule_engine.character_creation_catalog import character_options_phb2024
+from rule_engine.character_creation_phb2024 import build_phb2024_character
 from rule_engine.source_policy import STRICT_EDITION_SCOPE, append_strict_source_policy
 from services.groq_narrator import GroqNarratorClient
 
@@ -533,6 +536,52 @@ def validate_character(body: GuidedCharacterRequest, x_api_key: str | None = Hea
 def create_character(body: GuidedCharacterRequest, x_api_key: str | None = Header(default=None)):
     authorize(x_api_key)
     preview, state = _guided_character_preview(body)
+    character_id = preview['character']['id']
+    scene = _initial_scene(character_id)
+    state['scene'] = scene
+    state['encounter'] = _initial_encounter()
+    return {
+        **preview,
+        'campaign_id': str(uuid.uuid4()),
+        'state': state,
+        'available_actions': scene['available_actions'],
+    }
+
+
+@app.get('/v2/character/options')
+def get_phb2024_character_options(x_api_key: str | None = Header(default=None)):
+    authorize(x_api_key)
+    return character_options_phb2024()
+
+
+def _phb2024_character_preview(body: PHB2024GuidedCharacterRequest) -> tuple[dict[str, Any], dict[str, Any]]:
+    try:
+        character = build_phb2024_character(body)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    resolution_body = ResolveRequest(action=CreateCharacterAction(type='create_character', character=character))
+    resolution = resolve_request(resolution_body)
+    return {
+        'schema_version': 'character-creation-phb2024-v1',
+        'ruleset': 'dnd-2024-phb',
+        'valid': True,
+        'character': resolution_body.state['character'],
+        'derived': resolution['outcome']['derived'],
+        'rule_resolution': resolution,
+    }, resolution_body.state
+
+
+@app.post('/v2/character/validate')
+def validate_phb2024_character(body: PHB2024GuidedCharacterRequest, x_api_key: str | None = Header(default=None)):
+    authorize(x_api_key)
+    preview, _state = _phb2024_character_preview(body)
+    return preview
+
+
+@app.post('/v2/character/create')
+def create_phb2024_character(body: PHB2024GuidedCharacterRequest, x_api_key: str | None = Header(default=None)):
+    authorize(x_api_key)
+    preview, state = _phb2024_character_preview(body)
     character_id = preview['character']['id']
     scene = _initial_scene(character_id)
     state['scene'] = scene

@@ -26,6 +26,37 @@ class GuidedCharacterRequest(BaseModel):
         return name
 
 
+class PHB2024GuidedCharacterRequest(BaseModel):
+    """Strict player choices for first-level 2024 PHB character creation."""
+
+    model_config = ConfigDict(extra='forbid')
+
+    name: StrictStr = Field(min_length=1, max_length=64)
+    class_id: StrictStr
+    level: StrictInt = 1
+    species_id: StrictStr
+    species_choices: dict[StrictStr, StrictStr] = Field(default_factory=dict)
+    background_id: StrictStr
+    alignment_id: StrictStr
+    ability_method_id: StrictStr
+    base_abilities: dict[StrictStr, StrictInt]
+    background_ability_increases: dict[StrictStr, StrictInt]
+    abilities: dict[StrictStr, StrictInt]
+    skills: list[StrictStr]
+    language_choices: list[StrictStr]
+    class_equipment_option: StrictStr
+    background_equipment_option: StrictStr
+    class_choices: dict[StrictStr, StrictStr] = Field(default_factory=dict)
+
+    @field_validator('name')
+    @classmethod
+    def trim_name(cls, value: str) -> str:
+        name = value.strip()
+        if not name:
+            raise ValueError('name cannot be blank')
+        return name
+
+
 class AbilityOption(BaseModel):
     id: str
     abbreviation: str
