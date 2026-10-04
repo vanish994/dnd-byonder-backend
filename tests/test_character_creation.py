@@ -124,7 +124,9 @@ class CharacterCreationTests(unittest.TestCase):
             available_actions=created["available_actions"], player_input="Olho ao redor.",
         ))
         self.assertEqual(first_turn.campaign_id, created["campaign_id"])
-        self.assertEqual(first_turn.state, created["state"])
+        self.assertEqual(first_turn.state["character"], created["state"]["character"])
+        self.assertEqual(first_turn.state["scene"], created["state"]["scene"])
+        self.assertIn("narrative_context", first_turn.state)
         self.assertEqual(first_turn.available_actions, created["available_actions"])
         self.assertEqual(first_turn.rule_resolution["schema_version"], "rule-resolution-v1")
         self.assertEqual(first_turn.rule_resolution["status"], "needs_rule_validation")

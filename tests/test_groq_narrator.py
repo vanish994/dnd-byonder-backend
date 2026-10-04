@@ -25,7 +25,7 @@ class GroqNarratorTests(unittest.TestCase):
 
         result = self.make_client(handler).narrate(
             campaign_id="campaign_123",
-            state={"scene": "porta"},
+            state={"scene": {"title": "porta"}, "private_secret": "must-not-reach-provider"},
             player_input="Eu observo a porta.",
             rule_resolution={"schema_version": "rule-resolution-v1", "status": "resolved"},
             available_actions=[{"type": "attack"}],
@@ -34,7 +34,11 @@ class GroqNarratorTests(unittest.TestCase):
         self.assertEqual(captured["headers"]["authorization"], "Bearer groq-secret")
         self.assertEqual(captured["body"]["model"], "llama-test")
         self.assertFalse(captured["body"]["stream"])
-        self.assertIn("rule-resolution-v1", captured["body"]["messages"][1]["content"])
+        content = captured["body"]["messages"][1]["content"]
+        self.assertIn("<CONTEXTO_NARRATIVO>", content)
+        self.assertIn("<FATOS_MECANICOS_AUTORIZADOS>", content)
+        self.assertIn("narrative-context-v1", content)
+        self.assertNotIn("must-not-reach-provider", content)
         self.assertNotIn("groq-secret", json.dumps(captured["body"]))
 
     def test_http_429_is_fail_closed(self):

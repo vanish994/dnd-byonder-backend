@@ -5,6 +5,7 @@ from copy import deepcopy
 from typing import Any
 
 from game.contracts import GameTurnRequest, GameTurnResponse
+from game.narrator import fallback_narration, record_narration, record_narrative_turn
 from services.narrator import NarratorError, NarratorProvider
 
 
@@ -62,6 +63,12 @@ class GameOrchestrator:
             available_actions = deepcopy(scene["available_actions"])
         else:
             available_actions = deepcopy(request.available_actions)
+
+        record_narrative_turn(
+            state,
+            player_input=request.player_input,
+            rule_resolution=resolution,
+        )
         try:
             narration = self.narrator.narrate(
                 campaign_id=request.campaign_id,
@@ -72,13 +79,12 @@ class GameOrchestrator:
                 request_id=request_id,
             )
         except NarratorError:
-            if resolution.get("status") == "resolved":
-                narration = "A resolução mecânica foi concluída, mas a narração está temporariamente indisponível."
-            else:
-                narration = "A narração está temporariamente indisponível."
+            narration = fallback_narration(resolution, request.player_input)
             narration_status = "unavailable"
         else:
             narration_status = "available"
+
+        record_narration(state, narration)
         return GameTurnResponse(
             campaign_id=request.campaign_id,
             narration=narration,
