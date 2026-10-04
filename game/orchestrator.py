@@ -37,6 +37,7 @@ class GameOrchestrator:
 
     def turn(self, request: GameTurnRequest, *, request_id: str | None = None) -> GameTurnResponse:
         state = deepcopy(request.state)
+        had_narrative_context = isinstance(state.get("narrative_context"), dict)
         if request.action is None:
             resolution = {
                 "schema_version": "rule-resolution-v1",
@@ -57,6 +58,12 @@ class GameOrchestrator:
         if request.action is not None and isinstance(scene, dict):
             scene["last_action"] = request.action.get("type")
         combat = state.get("combat")
+        if request.action is None and had_narrative_context and isinstance(scene, dict):
+            # Free text is intentionally not promoted into a mechanic. Do not
+            # keep showing scene suggestions that may no longer describe the
+            # player's latest declaration; the next set must come from a
+            # server-authorized state transition.
+            scene["available_actions"] = []
         if isinstance(combat, dict) and "available_actions" in combat:
             available_actions = deepcopy(combat["available_actions"])
         elif isinstance(scene, dict) and isinstance(scene.get("available_actions"), list):
