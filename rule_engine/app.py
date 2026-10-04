@@ -563,12 +563,43 @@ def game_turn(
         ) from exc
 
 
+def _validate_movement_state(actor: dict[str, Any]) -> None:
+    movement_speed = actor.get('movement_speed')
+    movement_remaining = actor.get('movement_remaining')
+    position = actor.get('position')
+
+    if (
+        not isinstance(movement_speed, int)
+        or isinstance(movement_speed, bool)
+        or movement_speed < 0
+    ):
+        raise ValueError('invalid movement_speed')
+
+    if (
+        not isinstance(movement_remaining, int)
+        or isinstance(movement_remaining, bool)
+        or movement_remaining < 0
+    ):
+        raise ValueError('invalid movement_remaining')
+
+    if movement_remaining > movement_speed:
+        raise ValueError('movement_remaining exceeds movement_speed')
+
+    if (
+        not isinstance(position, int)
+        or isinstance(position, bool)
+        or position < 0
+    ):
+        raise ValueError('invalid position')
+
+
 def _combat_available_actions(combat: dict[str, Any]) -> list[dict[str, str]]:
     if not combat.get('active'):
         return []
     actor = combat.get('combatants', {}).get(combat.get('current_actor_id'))
     if not actor or actor.get('unconscious'):
         return [{'type': 'end_turn'}]
+    _validate_movement_state(actor)
     actions: list[dict[str, str]] = []
     movement_available = actor.get('movement_remaining', 0) > 0
     if has_condition(actor, 'prone'):
@@ -823,6 +854,7 @@ def resolve_move(body: ResolveRequest) -> dict[str, Any]:
         raise TypeError('resolve_move requires a validated action')
     combat = _require_combat(body.state)
     actor = _require_current_actor(combat, action.actor_id)
+    _validate_movement_state(actor)
     if actor.get('unconscious'):
         raise ValueError('unconscious actor cannot move')
     if action.distance > 0 and (

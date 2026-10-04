@@ -138,6 +138,129 @@ class CombatVerticalSliceTests(unittest.TestCase):
             self.apply(state, {"type": "move", "actor_id": "player", "distance": 31})
         self.assertEqual(state, before)
 
+    def test_move_consumes_exact_remaining_movement(self):
+        state = {}
+        self.start(state)
+
+        self.apply(
+            state,
+            {"type": "move", "actor_id": "player", "distance": 30},
+        )
+
+        player = state["combat"]["combatants"]["player"]
+
+        self.assertEqual(player["position"], 30)
+        self.assertEqual(player["movement_remaining"], 0)
+        self.assertNotIn(
+            {"type": "move"},
+            state["combat"]["available_actions"],
+        )
+
+    def test_zero_distance_does_not_create_negative_movement(self):
+        state = {}
+        self.start(state)
+
+        self.apply(
+            state,
+            {"type": "move", "actor_id": "player", "distance": 0},
+        )
+
+        player = state["combat"]["combatants"]["player"]
+
+        self.assertGreaterEqual(player["movement_remaining"], 0)
+        self.assertLessEqual(
+            player["movement_remaining"],
+            player["movement_speed"],
+        )
+        self.assertEqual(player["position"], 0)
+
+    def test_zero_movement_speed_has_no_move_action(self):
+        combatants = self.combatants(player_speed=0)
+        state = {}
+
+        self.start(state, combatants=combatants)
+
+        player = state["combat"]["combatants"]["player"]
+
+        self.assertEqual(player["movement_speed"], 0)
+        self.assertEqual(player["movement_remaining"], 0)
+        self.assertNotIn(
+            {"type": "move"},
+            state["combat"]["available_actions"],
+        )
+
+        with self.assertRaises(ValueError):
+            self.apply(
+                state,
+                {"type": "move", "actor_id": "player", "distance": 1},
+            )
+
+    def test_invalid_movement_remaining_above_speed_is_rejected(self):
+        state = {}
+        self.start(state)
+
+        player = state["combat"]["combatants"]["player"]
+        player["movement_remaining"] = 31
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "movement_remaining exceeds movement_speed",
+        ):
+            api._combat_available_actions(state["combat"])
+
+    def test_negative_movement_remaining_is_rejected(self):
+        state = {}
+        self.start(state)
+
+        player = state["combat"]["combatants"]["player"]
+        player["movement_remaining"] = -1
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "invalid movement_remaining",
+        ):
+            api._combat_available_actions(state["combat"])
+
+    def test_negative_movement_speed_is_rejected(self):
+        state = {}
+        self.start(state)
+
+        player = state["combat"]["combatants"]["player"]
+        player["movement_speed"] = -1
+
+        with self.assertRaisesRegex(ValueError, "invalid movement_speed"):
+            api._combat_available_actions(state["combat"])
+
+    def test_negative_position_is_rejected(self):
+        state = {}
+        self.start(state)
+
+        player = state["combat"]["combatants"]["player"]
+        player["position"] = -1
+
+        with self.assertRaisesRegex(ValueError, "invalid position"):
+            api._combat_available_actions(state["combat"])
+
+    def test_move_preserves_action_bonus_action_and_reaction(self):
+        state = {}
+        self.start(state)
+
+        player = state["combat"]["combatants"]["player"]
+
+        self.assertTrue(player["action_available"])
+        self.assertTrue(player["bonus_action_available"])
+        self.assertTrue(player["reaction_available"])
+
+        self.apply(
+            state,
+            {"type": "move", "actor_id": "player", "distance": 10},
+        )
+
+        self.assertTrue(player["action_available"])
+        self.assertTrue(player["bonus_action_available"])
+        self.assertTrue(player["reaction_available"])
+        self.assertEqual(player["movement_remaining"], 20)
+
     def test_move_outside_current_turn_is_rejected(self):
         state = {}
         self.start(state)
