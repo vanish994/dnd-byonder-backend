@@ -748,6 +748,7 @@ def _validate_initiative_state(combat: dict[str, Any]) -> None:
 def _start_turn(combat: dict[str, Any], actor: dict[str, Any]) -> None:
     actor['action_available'] = True
     actor['action_uses_remaining'] = 1
+    actor['action_surge_used_this_turn'] = False
     actor['bonus_action_available'] = True
     actor['reaction_available'] = True
     actor.pop('_movement_remaining_before_condition_block', None)
@@ -803,7 +804,11 @@ def _combat_available_actions(combat: dict[str, Any]) -> list[dict[str, str]]:
     if actor.get('bonus_action_available') and isinstance(second_wind, dict) and second_wind.get('current', 0) > 0:
         actions.append({'type': 'second_wind'})
     action_surge = character.get('resources', {}).get('action_surge') if isinstance(character, dict) else None
-    if isinstance(action_surge, dict) and action_surge.get('current', 0) > 0:
+    if (
+        isinstance(action_surge, dict)
+        and action_surge.get('current', 0) > 0
+        and not actor.get('action_surge_used_this_turn', False)
+    ):
         actions.append({'type': 'action_surge'})
     actions.append({'type': 'end_turn'})
     return actions
@@ -1243,6 +1248,7 @@ def resolve_start_combat(
             'conditions': [],
             'action_available': True,
             'action_uses_remaining': 1,
+            'action_surge_used_this_turn': False,
             'bonus_action_available': True,
             'reaction_available': True,
             'movement_remaining': spec.movement_speed,
@@ -1384,10 +1390,13 @@ def resolve_action_surge(body: ResolveRequest) -> dict[str, Any]:
     character = Character.model_validate(character_state)
     if character.class_.id != 'fighter' or character.level < 2:
         raise ValueError('action surge is not available')
+    if actor.get('action_surge_used_this_turn', False):
+        raise ValueError('action surge already used this turn')
     consumed = consume_resource(character_state, 'action_surge')
     action_uses = actor.get('action_uses_remaining', 1 if actor.get('action_available') else 0)
     actor['action_uses_remaining'] = action_uses + 1
     actor['action_available'] = True
+    actor['action_surge_used_this_turn'] = True
     combat['available_actions'] = _combat_available_actions(combat)
     return _combat_resolution(
         {'type': 'action_surge', 'actor_id': action.actor_id},

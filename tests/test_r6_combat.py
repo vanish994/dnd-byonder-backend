@@ -123,6 +123,33 @@ class R6CombatTests(unittest.TestCase):
         api.resolve_request(body)
         self.assertEqual(body.state["character"]["resources"]["action_surge"]["current"], 1)
 
+    def test_level_seventeen_action_surge_only_once_per_turn(self):
+        state = self.state_for(17)
+        body = api.ResolveRequest(action={"type": "action_surge", "actor_id": "player"}, state=state)
+        api.resolve_request(body)
+        state.clear()
+        state.update(body.state)
+        player = state["combat"]["combatants"]["player"]
+        self.assertEqual(player["character"]["resources"]["action_surge"]["current"], 1)
+        self.assertNotIn({"type": "action_surge"}, state["combat"]["available_actions"])
+        before = deepcopy(state)
+        with self.assertRaisesRegex(ValueError, "already used this turn"):
+            api.resolve_request(api.ResolveRequest(
+                action={"type": "action_surge", "actor_id": "player"}, state=state,
+            ))
+        self.assertEqual(state, before)
+
+        for actor_id in ("player", "enemy"):
+            end_body = api.ResolveRequest(action={"type": "end_turn", "actor_id": actor_id}, state=state)
+            api.resolve_request(end_body)
+            state.clear()
+            state.update(end_body.state)
+        self.assertEqual(state["combat"]["current_actor_id"], "player")
+        self.assertIn({"type": "action_surge"}, state["combat"]["available_actions"])
+        second_body = api.ResolveRequest(action={"type": "action_surge", "actor_id": "player"}, state=state)
+        api.resolve_request(second_body)
+        self.assertEqual(second_body.state["combat"]["combatants"]["player"]["character"]["resources"]["action_surge"]["current"], 0)
+
     def test_multi_attack_failure_rolls_back_all_mutations(self):
         state = self.state_for(5)
         before = deepcopy(state)

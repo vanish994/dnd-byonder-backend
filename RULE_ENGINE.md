@@ -42,7 +42,7 @@ Na resolução de ataques, modificadores de dano podem ser negativos, o dano fin
 
 O `attack` de combate é uma Attack Action mecânica. O número de ataques é derivado do registry da classe: Fighter faz 1 ataque nos níveis 1–4, 2 no nível 5, 3 no nível 11 e 4 no nível 20. Cada ataque possui resolução própria de d20, acerto/crítico/erro, dano e HP; o envelope mantém compatibilidade no caso de um ataque e acrescenta `attack_count`/`attacks` quando há multiplicidade.
 
-Fighter a partir do nível 2 recebe o recurso `action_surge`, com recuperação de um uso em short rest e todos os usos em long rest. Action Surge consome o recurso server-owned e incrementa os usos de Action do turno, permitindo uma nova Attack Action. O estado mantém `action_uses_remaining` além do booleano legado `action_available`, e `available_actions` é derivado desses campos.
+Fighter a partir do nível 2 recebe o recurso `action_surge`, com recuperação de um uso em short rest e todos os usos em long rest. Action Surge consome o recurso server-owned e incrementa os usos de Action do turno, permitindo uma nova Attack Action. Mesmo no nível 17, quando existem dois usos antes de um descanso, somente um uso pode ocorrer no mesmo turno; o hook de início de turno limpa essa trava. O estado mantém `action_uses_remaining` além do booleano legado `action_available`, e `available_actions` é derivado desses campos.
 
 Ataques múltiplos são transacionais: uma falha em qualquer ataque restaura o estado completo, incluindo HP, recursos, contador de Action, condições e estado de combate.
 
