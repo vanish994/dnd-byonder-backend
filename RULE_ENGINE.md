@@ -30,6 +30,8 @@ O campo `action` é opcional. Texto livre não é interpretado como regra. Quand
 
 A integração com o provider de narração é separada do Rule Engine. O provider Groq recebe apenas contexto narrativo e fatos resolvidos; não rola, calcula ou adjudica mecânicas. O provider Groq permanece disponível para rollback explícito.
 
+O Rule Engine também aceita ações estruturadas de `rest`, `define_resource`, `consume_resource`, `recover_resource`, `add_item`, `remove_item`, `equip_item` e `unequip_item`. Esses dados vivem no estado serializável do personagem (`resources`, `inventory` e `equipped`) e continuam sob a autoridade mecânica do resolver. Descanso não é permitido durante combate ativo; ataques de combate podem usar a arma equipada e a AC pode ser derivada da armadura equipada.
+
 ### Configuração
 
 ```text

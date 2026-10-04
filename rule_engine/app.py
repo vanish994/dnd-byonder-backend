@@ -28,12 +28,15 @@ from game.orchestrator import (
 )
 from rule_engine.conditions import (
     advance_condition_durations,
+    clear_conditions_for_rest,
     has_condition,
     has_disadvantage,
     remove_condition,
     sync_movement_with_conditions,
 )
 from rule_engine.dice import MAX_MODIFIER, DiceExpressionError, roll_dice
+from rule_engine.equipment import add_item, equip_item, remove_item, unequip_item
+from rule_engine.resources import consume_resource, define_resource, recover_for_rest, recover_for_turn, recover_resource
 from rule_engine.character import (
     SKILL_TO_ABILITY,
     Character,
@@ -127,7 +130,7 @@ class SavingThrowAction(BaseModel):
 
 
 class AttackDamage(BaseModel):
-    dice: Literal['1d8']
+    dice: StrictStr = Field(min_length=2, max_length=20)
     modifier: StrictInt = Field(ge=0, le=MAX_MODIFIER)
 
     class Config:
@@ -152,7 +155,7 @@ class AttackAction(BaseModel):
             raise ValueError('target_ac is required outside combat')
         if self.actor_id is not None and self.target_ac is not None:
             raise ValueError('target_ac must come from combat state')
-        if self.attack_bonus is None and self.weapon_id is None:
+        if self.attack_bonus is None and self.weapon_id is None and self.actor_id is None:
             raise ValueError('attack requires attack_bonus or weapon_id')
         if self.actor_id is None and self.attack_bonus is None:
             raise ValueError('legacy attack requires attack_bonus')
@@ -211,6 +214,63 @@ class EndTurnAction(BaseModel):
         extra = 'forbid'
 
 
+class RestAction(BaseModel):
+    type: Literal['rest']
+    rest_type: Literal['short_rest', 'long_rest']
+    character_id: StrictStr | None = None
+
+    class Config:
+        extra = 'forbid'
+
+
+class ResourceAction(BaseModel):
+    type: Literal['define_resource', 'consume_resource', 'recover_resource']
+    resource_id: StrictStr = Field(min_length=1, max_length=64)
+    character_id: StrictStr | None = None
+    amount: StrictInt | None = Field(default=None, ge=0)
+    maximum: StrictInt | None = Field(default=None, ge=0)
+    current: StrictInt | None = Field(default=None, ge=0)
+    recovery: Literal['short_rest', 'long_rest', 'turn', 'never'] = 'never'
+
+    @model_validator(mode='after')
+    def validate_operation(self):
+        if self.type == 'define_resource' and self.maximum is None:
+            raise ValueError('resource definition requires maximum')
+        if self.type != 'define_resource' and self.maximum is not None:
+            raise ValueError('maximum is only valid when defining a resource')
+        if self.type == 'consume_resource':
+            if self.amount is None:
+                self.amount = 1
+            if self.amount <= 0:
+                raise ValueError('resource consumption requires a positive amount')
+        return self
+
+    class Config:
+        extra = 'forbid'
+
+
+class InventoryAction(BaseModel):
+    type: Literal['add_item', 'remove_item', 'equip_item', 'unequip_item']
+    item_id: StrictStr | None = Field(default=None, min_length=1, max_length=64)
+    character_id: StrictStr | None = None
+    quantity: StrictInt = Field(default=1, ge=1)
+    slot: Literal['weapon', 'armor'] | None = None
+    item: dict[str, Any] | None = None
+
+    @model_validator(mode='after')
+    def validate_operation(self):
+        if self.type in {'add_item', 'remove_item', 'equip_item'} and self.item_id is None:
+            raise ValueError('item_id is required')
+        if self.type == 'unequip_item' and self.item_id is None and self.slot is None:
+            raise ValueError('unequip_item requires item_id or slot')
+        if self.type != 'add_item' and self.item is not None:
+            raise ValueError('item definition is only valid when adding an item')
+        return self
+
+    class Config:
+        extra = 'forbid'
+
+
 class CreateCharacterAction(BaseModel):
     type: Literal['create_character']
     character: Character
@@ -241,7 +301,7 @@ class SkillCheckAction(BaseModel):
 
 
 class ResolveRequest(BaseModel):
-    action: TextAction | CreateCharacterAction | SkillCheckAction | AbilityCheckAction | SavingThrowAction | AttackAction | StartCombatAction | MoveAction | EndTurnAction
+    action: TextAction | CreateCharacterAction | SkillCheckAction | AbilityCheckAction | SavingThrowAction | AttackAction | StartCombatAction | MoveAction | EndTurnAction | RestAction | ResourceAction | InventoryAction
     state: dict[str, Any] = Field(default_factory=dict)
     rule_ids: list[str] = Field(default_factory=list)
 
@@ -654,6 +714,10 @@ def _start_turn(combat: dict[str, Any], actor: dict[str, Any]) -> None:
     actor.pop('_movement_remaining_before_condition_block', None)
     actor['movement_remaining'] = actor['movement_speed']
     sync_movement_with_conditions(actor)
+    if 'resources' in actor:
+        recover_for_turn(actor)
+    if isinstance(actor.get('character'), dict) and 'resources' in actor['character']:
+        recover_for_turn(actor['character'])
 
 
 def _determine_next_actor(
@@ -814,6 +878,101 @@ def _character_for_combatant(state: dict[str, Any], combatant: dict[str, Any]) -
     if raw is not None:
         return derive_character(raw)
     return _character_from_state(state, combatant.get('id'))
+
+
+def _mutable_character_state(state: dict[str, Any], character_id: str | None = None) -> dict[str, Any]:
+    raw = state.get('character')
+    if character_id is not None:
+        characters = state.get('characters')
+        if isinstance(characters, dict):
+            raw = characters.get(character_id)
+        elif isinstance(raw, dict) and raw.get('id') != character_id:
+            raw = None
+    if not isinstance(raw, dict):
+        raise ValueError('character not found')
+    return raw
+
+
+def _character_resolution(action: dict[str, Any], outcome: dict[str, Any]) -> dict[str, Any]:
+    return _combat_resolution(
+        action,
+        check={},
+        rolls=[],
+        outcome=outcome,
+        rules_used=['character_state.v1'],
+    )
+
+
+def resolve_rest(body: ResolveRequest) -> dict[str, Any]:
+    action = body.action
+    if not isinstance(action, RestAction):
+        raise TypeError('resolve_rest requires a validated action')
+    if body.state.get('combat', {}).get('active'):
+        raise ValueError('cannot rest during active combat')
+    character = _mutable_character_state(body.state, action.character_id)
+    removed = clear_conditions_for_rest(character, rest_type=action.rest_type)
+    recovered = recover_for_rest(character, action.rest_type)
+    hp_before = character.get('current_hp')
+    if action.rest_type == 'long_rest':
+        _validated_character, derived = derive_character(character)
+        character['current_hp'] = derived['hp']['max']
+        for field in ('action_available', 'bonus_action_available', 'reaction_available'):
+            if field in character:
+                character[field] = True
+    return _character_resolution(
+        {'type': 'rest', 'rest_type': action.rest_type},
+        {
+            'rest_type': action.rest_type,
+            'conditions_removed': [item['id'] for item in removed],
+            'resources_recovered': recovered,
+            'hp_before': hp_before,
+            'hp_after': character.get('current_hp'),
+        },
+    )
+
+
+def resolve_resource(body: ResolveRequest) -> dict[str, Any]:
+    action = body.action
+    if not isinstance(action, ResourceAction):
+        raise TypeError('resolve_resource requires a validated action')
+    character = _mutable_character_state(body.state, action.character_id)
+    if action.type == 'define_resource':
+        resource = define_resource(
+            character,
+            action.resource_id,
+            maximum=action.maximum,
+            current=action.current,
+            recovery=action.recovery,
+        )
+    elif action.type == 'consume_resource':
+        resource = consume_resource(character, action.resource_id, action.amount)
+    else:
+        resource = recover_resource(character, action.resource_id, action.amount)
+    return _character_resolution(
+        {'type': action.type, 'resource_id': action.resource_id},
+        {'resource': dict(resource)},
+    )
+
+
+def resolve_inventory(body: ResolveRequest) -> dict[str, Any]:
+    action = body.action
+    if not isinstance(action, InventoryAction):
+        raise TypeError('resolve_inventory requires a validated action')
+    if body.state.get('combat', {}).get('active'):
+        raise ValueError('cannot change equipment during active combat')
+    character = _mutable_character_state(body.state, action.character_id)
+    if action.type == 'add_item':
+        result = add_item(character, action.item_id, action.quantity, item=action.item)
+    elif action.type == 'remove_item':
+        result = remove_item(character, action.item_id, action.quantity)
+    elif action.type == 'equip_item':
+        result = equip_item(character, action.item_id, action.slot)
+    else:
+        result = unequip_item(character, action.slot, action.item_id)
+    return _character_resolution(
+        {'type': action.type, **({'item_id': action.item_id} if action.item_id else {})},
+        {'result': result, 'inventory': character.get('inventory', {}), 'equipped': character.get('equipped', {})},
+    )
 
 
 def resolve_create_character(body: ResolveRequest) -> dict[str, Any]:
@@ -1061,19 +1220,29 @@ def resolve_combat_attack(
     else:
         attack_roll_mode = 'normal'
     derived_rules: list[str] = []
-    if action.weapon_id is not None:
+    if action.weapon_id is not None or action.attack_bonus is None:
         character, derived = _character_for_combatant(body.state, actor)
-        weapon = character.weapon(action.weapon_id)
+        requested_weapon_id = action.weapon_id
+        if requested_weapon_id is None:
+            requested_weapon_id = character.equipped.get('weapon')
+        if requested_weapon_id is None:
+            raise ValueError('combat attack requires an equipped weapon')
+        raw_character = actor.get('character') or body.state.get('character') or {}
+        if 'equipped' in raw_character and raw_character.get('equipped', {}).get('weapon') != requested_weapon_id:
+            raise ValueError('weapon is not equipped')
+        weapon = character.weapon(requested_weapon_id)
         attack_bonus = derived['ability_modifiers'][weapon.ability]
         if weapon.proficient:
             attack_bonus += derived['proficiency_bonus']
         damage = AttackDamage(dice=weapon.damage_dice, modifier=derived['ability_modifiers'][weapon.ability])
         derived_rules = [WEAPON_ATTACK_RULE_ID, WEAPON_DAMAGE_RULE_ID, ABILITY_MODIFIER_RULE_ID, PROFICIENCY_BONUS_RULE_ID]
+        resolved_weapon_id = requested_weapon_id
     else:
         if action.attack_bonus is None or action.damage is None:
             raise ValueError('legacy combat attack requires attack_bonus and damage')
         attack_bonus = action.attack_bonus
         damage = action.damage
+        resolved_weapon_id = None
     standalone_action = AttackAction(
         type='attack',
         attack_bonus=attack_bonus,
@@ -1100,7 +1269,7 @@ def resolve_combat_attack(
     }
     resolution['check']['target_ac'] = target['ac']
     if derived_rules:
-        resolution['check']['weapon_id'] = action.weapon_id
+        resolution['check']['weapon_id'] = resolved_weapon_id
         resolution['rules_used'] = derived_rules + resolution['rules_used']
     resolution['outcome'].update({
         'target_hp_before': hp_before,
@@ -1229,6 +1398,12 @@ def resolve_request(
             return resolve_move(body)
         if isinstance(body.action, EndTurnAction):
             return resolve_end_turn(body)
+        if isinstance(body.action, RestAction):
+            return resolve_rest(body)
+        if isinstance(body.action, ResourceAction):
+            return resolve_resource(body)
+        if isinstance(body.action, InventoryAction):
+            return resolve_inventory(body)
         if isinstance(body.action, AbilityCheckAction):
             return resolve_explicit_action(body, randbelow=randbelow)
         if isinstance(body.action, SavingThrowAction):

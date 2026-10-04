@@ -8,6 +8,8 @@ from pydantic import BaseModel, Field, StrictInt, StrictStr, model_validator
 
 from game.contracts import GuidedCharacterRequest
 from rule_engine.dice import MAX_MODIFIER
+from rule_engine.equipment import WEAPON_CATALOG, equipped_definition, validate_inventory
+from rule_engine.resources import validate_resources
 
 ABILITIES = (
     "strength",
@@ -40,15 +42,6 @@ SKILL_TO_ABILITY = {
 }
 
 CLASS_HIT_DIE = {"fighter": 10}
-WEAPON_CATALOG = {
-    "longsword": {
-        "id": "longsword",
-        "ability": "strength",
-        "damage_dice": "1d8",
-        "proficient": True,
-    }
-}
-
 # Guided creation is deliberately narrower than the existing Character and combat models.
 STANDARD_ARRAY = (15, 14, 13, 12, 10, 8)
 FIGHTER_LEVELS = (1,)
@@ -140,8 +133,11 @@ class ClassFoundation(BaseModel):
 
 class WeaponFoundation(BaseModel):
     id: StrictStr = Field(min_length=1, max_length=64)
+    kind: Literal["weapon"] = "weapon"
+    slot: Literal["weapon"] = "weapon"
     ability: Literal["strength", "dexterity"] = "strength"
-    damage_dice: Literal["1d8"] = "1d8"
+    damage_dice: StrictStr = Field(default="1d8", min_length=2, max_length=20)
+    damage_type: StrictStr = "slashing"
     proficient: bool = True
 
     @model_validator(mode="before")
@@ -202,6 +198,10 @@ class Character(BaseModel):
     class_: ClassFoundation = Field(alias="class")
     proficiencies: Proficiencies = Field(default_factory=Proficiencies)
     weapons: dict[str, WeaponFoundation] = Field(default_factory=dict)
+    inventory: dict[str, Any] = Field(default_factory=dict)
+    equipped: dict[str, str | None] = Field(default_factory=lambda: {"weapon": None, "armor": None})
+    resources: dict[str, Any] = Field(default_factory=dict)
+    conditions: list[dict[str, Any]] = Field(default_factory=list)
     current_hp: StrictInt | None = Field(default=None, ge=0)
 
     @model_validator(mode="before")
@@ -214,6 +214,10 @@ class Character(BaseModel):
             data["class"] = data.pop("class_")
         data.setdefault("proficiencies", {})
         data.setdefault("weapons", {})
+        data.setdefault("inventory", {})
+        data.setdefault("equipped", {"weapon": None, "armor": None})
+        data.setdefault("resources", {})
+        data.setdefault("conditions", [])
         return data
 
     @model_validator(mode="after")
@@ -229,6 +233,8 @@ class Character(BaseModel):
             raise ValueError("class level must match character level")
         if self.current_hp is not None and self.current_hp > self.derived()["hp"]["max"]:
             raise ValueError("current_hp cannot exceed derived max HP")
+        validate_inventory({"inventory": self.inventory, "equipped": self.equipped})
+        validate_resources({"resources": self.resources})
         return self
 
     def derived(self) -> dict[str, Any]:
@@ -248,17 +254,31 @@ class Character(BaseModel):
         for weapon_id, weapon in self.weapons.items():
             modifier = modifiers[weapon.ability]
             weapons[weapon_id] = {
-                **weapon.model_dump(),
+                **weapon.model_dump(exclude={"kind", "slot", "damage_type"}),
                 "attack_bonus": modifier + (prof if weapon.proficient else 0),
                 "damage_modifier": modifier,
             }
+        ac = 10 + modifiers["dexterity"]
+        ac_source = "unarmored"
+        equipment_state = {
+            "inventory": self.inventory,
+            "equipped": self.equipped,
+        }
+        armor = equipped_definition(equipment_state, "armor")
+        if armor is not None:
+            dexterity_bonus_max = armor.get("dexterity_bonus_max")
+            dexterity_bonus = modifiers["dexterity"]
+            if dexterity_bonus_max is not None:
+                dexterity_bonus = min(dexterity_bonus, dexterity_bonus_max)
+            ac = armor["armor_class"] + dexterity_bonus
+            ac_source = armor["id"]
         return {
             "ability_modifiers": modifiers,
             "proficiency_bonus": prof,
             "skill_modifiers": skill_modifiers,
             "saving_throw_modifiers": saving_throw_modifiers,
             "hp": {"current": current_hp, "max": max_hp},
-            "ac": {"value": 10 + modifiers["dexterity"], "source": "unarmored"},
+            "ac": {"value": ac, "source": ac_source},
             "initiative_modifier": modifiers["dexterity"],
             "weapons": weapons,
         }
@@ -266,6 +286,11 @@ class Character(BaseModel):
     def weapon(self, weapon_id: str) -> WeaponFoundation:
         data = self.weapons.get(weapon_id)
         if data is None:
+            inventory_entry = self.inventory.get(weapon_id)
+            if isinstance(inventory_entry, dict):
+                item = inventory_entry.get("item")
+                if isinstance(item, dict) and item.get("kind") == "weapon":
+                    return WeaponFoundation(**item)
             catalog = WEAPON_CATALOG.get(weapon_id)
             if catalog is None:
                 raise ValueError(f"unknown weapon: {weapon_id}")
@@ -287,6 +312,14 @@ def character_to_state(character: Character) -> dict[str, Any]:
         "weapons": {key: value.model_dump() for key, value in character.weapons.items()},
         "current_hp": character.current_hp,
     }
+    if character.inventory:
+        state["inventory"] = character.inventory
+    if character.equipped != {"weapon": None, "armor": None}:
+        state["equipped"] = character.equipped
+    if character.resources:
+        state["resources"] = character.resources
+    if character.conditions:
+        state["conditions"] = character.conditions
     if character.name is not None:
         state["name"] = character.name
     return state
@@ -322,6 +355,14 @@ def build_guided_character(selection: GuidedCharacterRequest) -> Character:
             "saving_throws": {ability: True for ability in FIGHTER_SAVING_THROWS},
         },
         "weapons": {selection.weapon_id: WEAPON_CATALOG[selection.weapon_id]},
+        "inventory": {
+            selection.weapon_id: {
+                "item_id": selection.weapon_id,
+                "quantity": 1,
+                "item": WEAPON_CATALOG[selection.weapon_id],
+            }
+        },
+        "equipped": {"weapon": selection.weapon_id, "armor": None},
     }
     character = Character.model_validate(character_data)
     return Character.model_validate({**character_data, "current_hp": character.derived()["hp"]["max"]})
