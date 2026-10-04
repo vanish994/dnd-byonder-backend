@@ -10,7 +10,9 @@ O narrador nunca deve receber a responsabilidade de calcular uma ação.
 
 O endpoint `/v1/dice/roll` gera faces de dados e totais, mas não resolve uma ação. O cliente não deve transformar uma rolagem bruta em sucesso, fracasso, dano ou condição sem uma mecânica validada.
 
-## Payload recomendado para o Mimo
+> **Nota de compatibilidade:** os exemplos desta seção foram preservados para referência histórica. Eles não são schemas mecânicos do Marco 5. O único contrato mecânico normativo é `rule-resolution-v1`, conforme implementado na branch do PR #3 e descrito na seção Marco 5 abaixo.
+
+## Payload histórico recomendado para o Mimo
 
 ```json
 {
@@ -54,3 +56,23 @@ O endpoint `/v1/dice/roll` é limitado a rolagens independentes. A busca de regr
 ## Fontes permitidas
 
 A busca usa somente fontes identificadas como 2024 ou 2025: o *Player’s Handbook 2024 / 5.5*, a fonte canônica do *Dungeon Master’s Guide 2024 / 5.5* e o *Monster Manual 2025*. Suplementos sem edição explícita e a extração alternativa do DMG permanecem no arquivo para auditoria, mas não são retornados pela busca. A edição de 2014 foi excluída.
+
+## Marco 5 — turno orquestrado
+
+O endpoint `POST /v1/game/turn` recebe `state`, `player_input` e uma `action` opcional. Texto livre nunca é convertido automaticamente em mecânica. Somente uma ação estruturada validada pelo Rule Engine pode produzir uma resolução.
+
+O resultado mecânico é sempre o objeto oficial `rule-resolution-v1`, exposto no campo `rule_resolution`. Não são usados `facts_resolved`, `facts_resolvidos` ou `rule_id` legado.
+
+Quando não há ação estruturada válida, a resposta usa o envelope:
+
+```json
+{
+  "schema_version": "rule-resolution-v1",
+  "status": "needs_rule_validation",
+  "reason": "No deterministic resolution was emitted because the requested rule has not been bound to a validated mechanic."
+}
+```
+
+Esse envelope não é enviado como fato mecânico ao narrador: o transporte `<FATOS_RESOLVIDOS>` recebe `{}`. Quando a resolução tem `status: "resolved"`, o mesmo objeto `rule-resolution-v1` é transportado integralmente.
+
+O backend é stateless: devolve o estado recebido e não persiste campanha, saves ou histórico.

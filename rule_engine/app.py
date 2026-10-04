@@ -7,10 +7,18 @@ from pathlib import Path
 from typing import Any, Literal
 
 from fastapi import FastAPI, Header, HTTPException, Query
-from pydantic import BaseModel, Field, StrictInt, constr
+from pydantic import BaseModel, Field, StrictInt, ValidationError, constr
 
+from game.contracts import GameTurnRequest, GameTurnResponse
+from game.orchestrator import (
+    GameOrchestrator,
+    InvalidGameAction,
+    NarrationError,
+    RuleResolutionError,
+)
 from rule_engine.dice import MAX_MODIFIER, DiceExpressionError, roll_dice
 from rule_engine.source_policy import STRICT_EDITION_SCOPE, append_strict_source_policy
+from services.mimo_narrator import MimoNarratorClient
 
 DB_PATH = Path(
     os.getenv(
@@ -19,6 +27,9 @@ DB_PATH = Path(
     )
 )
 API_KEY = os.getenv('RULE_ENGINE_API_KEY', '').strip()
+MIMO_BASE_URL = os.getenv('MIMO_BASE_URL', '').strip()
+MIMO_MODEL = os.getenv('MIMO_MODEL', 'mimo-v2.6-flash').strip()
+MIMO_API_KEY = os.getenv('MIMO_API_KEY', '').strip()
 app = FastAPI(title='D&D 2024 Rule Knowledge API', version='0.1.0')
 
 ABILITY_CHECK_RULE_ID = 'ability_check.mvp.v1'
@@ -155,6 +166,50 @@ def context(
 def resolve(body: ResolveRequest, x_api_key: str | None = Header(default=None)):
     authorize(x_api_key)
     return resolve_request(body)
+
+
+def resolve_game_action(action: dict[str, Any], state: dict[str, Any]) -> dict[str, Any]:
+    """Validate and resolve a structured action using the existing Rule Engine."""
+    try:
+        body = ResolveRequest(action=action, state=state)
+    except ValidationError as exc:
+        raise ValueError('invalid structured action') from exc
+    return resolve_request(body)
+
+
+def build_game_orchestrator() -> GameOrchestrator:
+    if not MIMO_BASE_URL or not MIMO_API_KEY:
+        raise HTTPException(status_code=503, detail='MiMo narrator is not configured')
+    try:
+        timeout = float(os.getenv('MIMO_TIMEOUT_SECONDS', '30'))
+    except ValueError as exc:
+        raise HTTPException(status_code=503, detail='invalid MIMO_TIMEOUT_SECONDS') from exc
+    narrator = MimoNarratorClient(
+        base_url=MIMO_BASE_URL,
+        model=MIMO_MODEL,
+        api_key=MIMO_API_KEY,
+        timeout_seconds=timeout,
+    )
+    return GameOrchestrator(narrator, resolve_action=resolve_game_action)
+
+
+@app.post('/v1/game/turn', response_model=GameTurnResponse)
+def game_turn(body: GameTurnRequest, x_api_key: str | None = Header(default=None)):
+    authorize(x_api_key)
+    try:
+        return build_game_orchestrator().turn(body)
+    except InvalidGameAction as exc:
+        raise HTTPException(status_code=422, detail='invalid structured action') from exc
+    except RuleResolutionError as exc:
+        raise HTTPException(status_code=502, detail='invalid Rule Engine resolution') from exc
+    except NarrationError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail={
+                'message': 'MiMo narrator unavailable',
+                'rule_resolution': exc.rule_resolution,
+            },
+        ) from exc
 
 
 def resolve_request(

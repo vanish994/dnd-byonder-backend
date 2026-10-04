@@ -21,3 +21,24 @@ Cada resultado inclui `source_id` e `edition` para permitir rastrear a proveniê
 A rolagem de dados é independente da resolução de regras. O endpoint retorna expressão normalizada, faces sorteadas, modificador e total; não marca acerto/crítico, não determina sucesso e não calcula dano ou condições. Vantagem/desvantagem é aceita somente para um d20.
 
 A chave opcional é enviada em `X-API-Key`. No Render, configure `RULE_ENGINE_API_KEY` como secret e use o mesmo valor no serviço que fará as chamadas.
+
+## Orchestrator de turno
+
+- `POST /v1/game/turn` — recebe `{ "campaign_id": "...", "state": {}, "player_input": "...", "action": null }`.
+
+O campo `action` é opcional. Texto livre não é interpretado como regra. Quando uma ação estruturada é fornecida, ela é validada pelo mesmo `ResolveRequest` do Rule Engine e, se suportada, produz `rule-resolution-v1` no campo `rule_resolution`.
+
+A integração com o proxy MiMo é separada do Rule Engine. O MiMo recebe apenas contexto narrativo e fatos resolvidos; não rola, calcula ou adjudica mecânicas.
+
+### Configuração
+
+```text
+MIMO_BASE_URL=https://dnd-mimo-narrator.onrender.com
+MIMO_MODEL=mimo-v2.6-flash
+MIMO_API_KEY=<secret do proxy MiMo>
+MIMO_TIMEOUT_SECONDS=30
+```
+
+`RULE_ENGINE_API_KEY` autentica chamadas ao backend com `X-API-Key`. `MIMO_API_KEY` autentica o backend no proxy com `Authorization: Bearer`. Nenhum secret é armazenado no código.
+
+O endpoint retorna `401` para chave do backend inválida, `422` para ação estruturada inválida, `503` quando o MiMo não está configurado e `502` em falha do Rule Engine/MiMo. Em falha do MiMo, o corpo do erro preserva `rule_resolution` sem fabricar uma narrativa.
