@@ -73,6 +73,7 @@ class CombatVerticalSliceTests(unittest.TestCase):
         self.assertEqual(combat["current_actor_id"], "player")
         self.assertEqual(combat["turn_order"], ["player", "goblin-1"])
         self.assertEqual(combat["combatants"]["player"]["movement_remaining"], 30)
+        self.assertEqual(combat["combatants"]["player"]["conditions"], [])
         self.assertTrue(combat["combatants"]["player"]["action_available"])
         self.assertTrue(combat["combatants"]["player"]["bonus_action_available"])
         self.assertTrue(combat["combatants"]["player"]["reaction_available"])
@@ -297,6 +298,42 @@ class CombatVerticalSliceTests(unittest.TestCase):
             )
         with self.assertRaises(ValueError):
             api.resolve_request(body, randbelow=self.sequence(10, 10))
+
+    def test_end_turn_expires_actor_turn_conditions(self):
+        state = {}
+        self.start(state)
+
+        player = state["combat"]["combatants"]["player"]
+
+        player["conditions"] = [
+            {
+                "id": "poisoned",
+                "source_id": "test-effect",
+                "duration": {
+                    "kind": "turns",
+                    "remaining": 1,
+                },
+                "effects": [],
+            }
+        ]
+
+        result = self.apply(
+            state,
+            {
+                "type": "end_turn",
+                "actor_id": "player",
+            },
+        )
+
+        self.assertEqual(
+            result["outcome"]["expired_conditions"],
+            ["poisoned"],
+        )
+
+        self.assertEqual(
+            state["combat"]["combatants"]["player"]["conditions"],
+            [],
+        )
 
 
 if __name__ == "__main__":

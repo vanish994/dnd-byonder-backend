@@ -25,6 +25,7 @@ from game.orchestrator import (
     NarrationError,
     RuleResolutionError,
 )
+from rule_engine.conditions import advance_condition_durations
 from rule_engine.dice import MAX_MODIFIER, DiceExpressionError, roll_dice
 from rule_engine.character import (
     SKILL_TO_ABILITY,
@@ -745,6 +746,7 @@ def resolve_start_combat(
             'movement_speed': spec.movement_speed,
             'unconscious': resolved_hp == 0,
             'side': spec.side,
+            'conditions': [],
             'action_available': True,
             'bonus_action_available': True,
             'reaction_available': True,
@@ -875,6 +877,12 @@ def resolve_end_turn(body: ResolveRequest) -> dict[str, Any]:
         raise TypeError('resolve_end_turn requires a validated action')
     combat = _require_combat(body.state)
     _require_current_actor(combat, action.actor_id)
+    actor = combat["combatants"][action.actor_id]
+
+    expired_conditions = advance_condition_durations(
+        actor,
+        timing="turn_end",
+    )
     order = combat['turn_order']
     previous_index = combat['turn_index']
     next_index = previous_index
@@ -895,7 +903,14 @@ def resolve_end_turn(body: ResolveRequest) -> dict[str, Any]:
         return _combat_resolution(
             {'type': 'end_turn', 'actor_id': action.actor_id},
             check={}, rolls=[],
-            outcome={'combat_active': False, 'combat_ended': True},
+            outcome={
+                'combat_active': False,
+                'combat_ended': True,
+                'expired_conditions': [
+                    condition["id"]
+                    for condition in expired_conditions
+                ],
+            },
         )
     if wrapped:
         combat['round'] += 1
@@ -915,6 +930,10 @@ def resolve_end_turn(body: ResolveRequest) -> dict[str, Any]:
             'round': combat['round'],
             'turn_index': next_index,
             'current_actor_id': next_actor['id'],
+            'expired_conditions': [
+                condition["id"]
+                for condition in expired_conditions
+            ],
         },
     )
 
