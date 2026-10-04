@@ -112,7 +112,9 @@ class CharacterCreationTests(unittest.TestCase):
         self.assertEqual(created["state"]["character"], created["character"])
         self.assertEqual(created["state"]["scene"]["id"], "intro")
         self.assertEqual(created["state"]["encounter"]["id"], "intro-ambush")
-        self.assertEqual([action["type"] for action in created["available_actions"]], ["ability_check", "start_combat"])
+        self.assertEqual([action["type"] for action in created["available_actions"]], ["ability_check", "narrative_intent"])
+        investigate_action = created["available_actions"][1]
+        self.assertEqual(investigate_action["intent"], "investigate_noise")
         self.assertEqual(str(UUID(created["campaign_id"])), created["campaign_id"])
         self.assertNotEqual(created["character"]["id"], preview["character"]["id"])
 
@@ -131,13 +133,40 @@ class CharacterCreationTests(unittest.TestCase):
         self.assertEqual(first_turn.rule_resolution["schema_version"], "rule-resolution-v1")
         self.assertEqual(first_turn.rule_resolution["status"], "needs_rule_validation")
         self.assertEqual(first_turn.narration, "A aventura começa.")
-        check_turn = session.turn(GameTurnRequest(
+        intent_turn = session.turn(GameTurnRequest(
             campaign_id=created["campaign_id"], state=first_turn.state,
-            player_input="Examino as pegadas.",
-            action={"type": "skill_check", "skill": "perception", "dc": 10, "character_id": created["character"]["id"]},
+            player_input=investigate_action["player_input"], action=investigate_action,
         ))
+        self.assertEqual(intent_turn.rule_resolution["status"], "needs_rule_validation")
+        self.assertNotIn("combat", intent_turn.state)
+        self.assertEqual([action["type"] for action in intent_turn.available_actions], ["skill_check"])
+        check_action = intent_turn.available_actions[0]
+        self.assertEqual(check_action["skill"], "perception")
+        self.assertEqual(check_action["dc"], 10)
+
+        with patch.object(api, "roll_dice", return_value={"rolls": [15]}):
+            check_turn = session.turn(GameTurnRequest(
+                campaign_id=created["campaign_id"], state=intent_turn.state,
+                player_input=check_action["player_input"], action=check_action,
+            ))
         self.assertEqual(check_turn.rule_resolution["check"]["modifier"], 0)
         self.assertEqual(check_turn.rule_resolution["status"], "resolved")
+        self.assertNotIn("combat", check_turn.state)
+        self.assertEqual(check_turn.rule_resolution["rolls"][0]["type"], "d20")
+        self.assertEqual([action["type"] for action in check_turn.available_actions], ["start_combat"])
+        self.assertEqual(check_turn.available_actions[0]["label"], "Avançar para o confronto")
+
+        with patch.object(api, "roll_dice", side_effect=[{"rolls": [20]}, {"rolls": [1]}]):
+            combat_turn = session.turn(GameTurnRequest(
+                campaign_id=created["campaign_id"], state=check_turn.state,
+                available_actions=check_turn.available_actions,
+                player_input=check_turn.available_actions[0]["player_input"],
+                action=check_turn.available_actions[0],
+            ))
+        self.assertIn("combat", combat_turn.state)
+        self.assertEqual(combat_turn.rule_resolution["action"]["type"], "start_combat")
+        self.assertEqual([roll["purpose"] for roll in combat_turn.rule_resolution["rolls"]], ["initiative", "initiative"])
+        self.assertEqual(combat_turn.rule_resolution["outcome"]["round"], 1)
 
     def test_created_fighter_keeps_mechanics_when_narrator_fails_in_combat(self):
         created = self.post("create").json()

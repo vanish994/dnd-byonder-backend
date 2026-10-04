@@ -470,10 +470,10 @@ def _initial_scene_actions(character_id: str) -> list[dict[str, Any]]:
             'player_input': 'Observo cuidadosamente a clareira.',
         },
         {
-            'type': 'start_combat',
-            'encounter_id': INITIAL_ENCOUNTER_ID,
+            'type': 'narrative_intent',
+            'intent': 'investigate_noise',
             'label': 'Investigar o ruído',
-            'description': 'Siga o som entre as árvores e prepare-se para o perigo.',
+            'description': 'Siga o som e descreva como você investiga. O Mestre reage antes de pedir qualquer rolagem.',
             'player_input': 'Investigo o ruído entre as árvores.',
         },
     ]
@@ -551,6 +551,26 @@ def resolve_game_action(action: dict[str, Any], state: dict[str, Any]) -> dict[s
         key: value for key, value in action.items()
         if key not in ACTION_PRESENTATION_FIELDS
     }
+    if mechanical_action.get('type') == 'narrative_intent':
+        if mechanical_action.get('intent') != 'investigate_noise':
+            raise ValueError('unknown narrative intent')
+        scene = state.get('scene')
+        if not isinstance(scene, dict) or scene.get('id') != INITIAL_SCENE_ID:
+            raise ValueError('investigation intent is unavailable in this scene')
+        scene['available_actions'] = [{
+            'type': 'skill_check',
+            'skill': 'perception',
+            'dc': 10,
+            'character_id': state.get('character', {}).get('id'),
+            'label': 'Fazer teste de Percepção',
+            'description': 'O Mestre reagiu à sua investigação. Agora role Percepção para descobrir o que está acontecendo.',
+            'player_input': 'Faço um teste de Percepção para entender o ruído.',
+        }]
+        return {
+            'schema_version': RULE_RESOLUTION_SCHEMA_VERSION,
+            'status': 'needs_rule_validation',
+            'reason': 'Narrative intent acknowledged; the next mechanical check is presented separately.',
+        }
     if mechanical_action.get('type') == 'start_combat' and mechanical_action.get('encounter_id'):
         encounter = state.get('encounter')
         if not isinstance(encounter, dict) or encounter.get('id') != mechanical_action['encounter_id']:
@@ -583,6 +603,22 @@ def resolve_game_action(action: dict[str, Any], state: dict[str, Any]) -> dict[s
     resolution = resolve_request(body)
     state.clear()
     state.update(body.state)
+    scene = state.get('scene')
+    combat = state.get('combat')
+    if (
+        mechanical_action.get('type') == 'skill_check'
+        and mechanical_action.get('skill') == 'perception'
+        and isinstance(scene, dict)
+        and scene.get('id') == INITIAL_SCENE_ID
+        and not (isinstance(combat, dict) and combat.get('active'))
+    ):
+        scene['available_actions'] = [{
+            'type': 'start_combat',
+            'encounter_id': INITIAL_ENCOUNTER_ID,
+            'label': 'Avançar para o confronto',
+            'description': 'Você já investigou. Escolha conscientemente se quer enfrentar a ameaça; ou descreva outra ação livremente.',
+            'player_input': 'Avanço para o confronto.',
+        }]
     return resolution
 
 
