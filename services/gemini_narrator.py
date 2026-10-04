@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import time
 from typing import Any, Protocol
 
@@ -11,6 +12,16 @@ from services.narrator import NarratorError
 
 
 logger = logging.getLogger(__name__)
+
+
+def _safe_error_detail(exc: Exception) -> tuple[str, str]:
+    status = getattr(exc, "status_code", None) or getattr(exc, "code", None) or "unknown"
+    detail = str(getattr(exc, "message", "") or exc).replace("\n", " ")[:240]
+    detail = re.sub(r"(?i)authorization\s*[:=]\s*(?:bearer\s+)?\S+", "Authorization=[REDACTED]", detail)
+    detail = re.sub(r"(?i)bearer\s+\S+", "Bearer [REDACTED]", detail)
+    detail = re.sub(r"(?i)(api[_ -]?key)\s*[:=]\s*\S+", r"\1=[REDACTED]", detail)
+    detail = re.sub(r"AIza[0-9A-Za-z_-]+|sk-[A-Za-z0-9_-]+", "[REDACTED]", detail)
+    return str(status), detail
 
 
 class GeminiNarratorError(NarratorError):
@@ -103,18 +114,26 @@ class GeminiNarratorClient:
                 ),
             )
         except TimeoutError as exc:
+            status, detail = _safe_error_detail(exc)
             logger.warning(
-                "NARRATOR_TIMEOUT provider=gemini duration_ms=%.1f error_type=%s request_id=%s",
+                "NARRATOR_TIMEOUT provider=gemini duration_ms=%.1f error_type=%s error_status=%s error_detail=%s request_id=%s",
                 (time.perf_counter() - started) * 1000,
                 type(exc).__name__,
+                status,
+                detail,
                 request_id or "none",
             )
             raise GeminiNarratorError("Gemini narrator request failed") from exc
         except Exception as exc:
+            status, detail = _safe_error_detail(exc)
+            event = "NARRATOR_AUTH_ERROR" if status in {"401", "403"} else "NARRATOR_PROVIDER_ERROR"
             logger.warning(
-                "NARRATOR_REQUEST_FAILED provider=gemini duration_ms=%.1f error_type=%s request_id=%s",
+                "%s provider=gemini duration_ms=%.1f error_type=%s error_status=%s error_detail=%s request_id=%s",
+                event,
                 (time.perf_counter() - started) * 1000,
                 type(exc).__name__,
+                status,
+                detail,
                 request_id or "none",
             )
             raise GeminiNarratorError("Gemini narrator request failed") from exc
