@@ -7,7 +7,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field, StrictInt, StrictStr, model_validator
 
 from game.contracts import GuidedCharacterRequest
-from rule_engine.classes import class_definition, class_features, class_resource_maximum, class_resource_recovery
+from rule_engine.classes import class_definition, class_features, class_resource_maximum, class_resource_recovery, class_resource_recovery_amount
 from rule_engine.dice import MAX_MODIFIER
 from rule_engine.equipment import WEAPON_CATALOG, equipped_definition, validate_inventory
 from rule_engine.progression import MAX_LEVEL, experience_for_level, proficiency_bonus_for_level, validate_experience_points
@@ -54,6 +54,7 @@ FIGHTER_SKILLS = (
 )
 FIGHTER_SAVING_THROWS = ("strength", "constitution")
 FIGHTER_WEAPONS = ("longsword",)
+WEAPON_PROFICIENCY_GROUPS = {"longsword": "martial"}
 
 ABILITY_PRESENTATION = {
     "strength": ("STR", "Força", "Usada em ataques físicos e esforços de força."),
@@ -235,6 +236,27 @@ class Character(BaseModel):
             raise ValueError("class level must match character level")
         class_definition(self.class_.id)
         validate_experience_points(self.experience_points)
+        class_data = class_definition(self.class_.id)
+        selected_skills = {skill for skill, proficient in self.proficiencies.skills.items() if proficient}
+        allowed_skills = set(class_data["skill_proficiencies"]["options"])
+        if not selected_skills <= allowed_skills:
+            raise ValueError("character has a skill proficiency not granted by class")
+        if len(selected_skills) > class_data["skill_proficiencies"]["count"]:
+            raise ValueError("character has too many class skill proficiencies")
+        expected_saves = set(class_data["saving_throw_proficiencies"])
+        actual_saves = {ability for ability, proficient in self.proficiencies.saving_throws.items() if proficient}
+        if actual_saves != expected_saves:
+            raise ValueError("saving throw proficiencies must match class")
+        self.proficiencies.skills = {skill: True for skill in sorted(selected_skills)}
+        self.proficiencies.saving_throws = {ability: True for ability in sorted(expected_saves)}
+        for weapon_id, weapon in self.weapons.items():
+            catalog_weapon = WEAPON_CATALOG.get(weapon_id)
+            if catalog_weapon is None:
+                raise ValueError("weapon must come from the authoritative catalog")
+            if weapon.model_dump() != WeaponFoundation(**catalog_weapon).model_dump():
+                raise ValueError("weapon definition must match the authoritative catalog")
+            if WEAPON_PROFICIENCY_GROUPS.get(weapon_id) not in class_data["weapon_proficiencies"]:
+                raise ValueError("class is not proficient with weapon")
         expected_features = class_features(self.class_.id, self.level)
         if self.class_features and self.class_features != expected_features:
             raise ValueError("class features do not match class level")
@@ -383,6 +405,7 @@ def build_guided_character(selection: GuidedCharacterRequest) -> Character:
                 "current": class_resource_maximum(selection.class_id, "second_wind", selection.level),
                 "maximum": class_resource_maximum(selection.class_id, "second_wind", selection.level),
                 "recovery": class_resource_recovery(selection.class_id, "second_wind"),
+                "recovery_amount": class_resource_recovery_amount(selection.class_id, "second_wind"),
             },
         },
     }

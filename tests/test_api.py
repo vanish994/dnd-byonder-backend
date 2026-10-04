@@ -338,7 +338,7 @@ class RuleEngineApiTests(unittest.TestCase):
         )
         self.assertEqual(
             result["rolls"],
-            [{"type": "d20", "result": 14}, {"type": "d8", "result": 6}],
+            [{"type": "d20", "result": 14}, {"type": "1d8", "results": [6], "critical": False}],
         )
         self.assertEqual(
             result["outcome"],
@@ -389,22 +389,23 @@ class RuleEngineApiTests(unittest.TestCase):
         self.assertEqual(result["outcome"]["natural_1"], True)
         self.assertEqual(result["outcome"]["damage"], None)
 
-    def test_attack_natural_20_rolls_single_damage_die_without_doubling(self):
+    def test_attack_natural_20_doubles_damage_dice(self):
         result = api.resolve_request(
             self.attack(attack_bonus=-5, target_ac=30, damage={"dice": "1d8", "modifier": 3}),
-            randbelow=self.randbelow_sequence(20, 4),
+            randbelow=self.randbelow_sequence(20, 4, 5),
         )
 
         self.assertEqual(result["outcome"]["total"], 15)
         self.assertEqual(result["outcome"]["hit"], True)
         self.assertEqual(result["outcome"]["critical"], True)
         self.assertEqual(result["outcome"]["natural_1"], False)
-        self.assertEqual(result["outcome"]["damage"], 7)
+        self.assertEqual(result["outcome"]["damage"], 12)
         self.assertEqual(len(result["rolls"]), 2)
+        self.assertEqual(result["rolls"][1], {"type": "1d8", "results": [4, 5], "critical": True})
 
-    def test_attack_damage_rejects_negative_modifier(self):
-        with self.assertRaises(ValueError):
-            self.attack(damage={"dice": "1d8", "modifier": -1})
+    def test_attack_damage_accepts_negative_modifier(self):
+        action = self.attack(damage={"dice": "1d8", "modifier": -1})
+        self.assertEqual(action.action.damage.modifier, -1)
 
     def test_attack_roll_natural_flags_are_mutually_exclusive(self):
         for d20_result in (1, 20):

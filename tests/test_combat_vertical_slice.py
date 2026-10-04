@@ -78,6 +78,7 @@ class CombatVerticalSliceTests(unittest.TestCase):
         )
 
     def attack(self, state, *, d20=15, d8=4, target="goblin-1", rolls=None):
+        attack_rolls = rolls or ((d20, d8, d8) if d20 == 20 else (d20, d8))
         return self.apply(
             state,
             {
@@ -87,7 +88,7 @@ class CombatVerticalSliceTests(unittest.TestCase):
                 "attack_bonus": 5,
                 "damage": {"dice": "1d8", "modifier": 3},
             },
-            randbelow=self.sequence(*(rolls or (d20, d8))),
+            randbelow=self.sequence(*attack_rolls),
         )
 
     def test_start_combat_creates_state_and_resources(self):
@@ -694,29 +695,29 @@ class CombatVerticalSliceTests(unittest.TestCase):
         self.start(state, combatants=self.combatants(goblin_hp=1))
         result = self.attack(state, d20=20, d8=8)
 
-        self.assertEqual(result["outcome"]["damage"], 11)
+        self.assertEqual(result["outcome"]["damage"], 19)
         self.assertEqual(state["combat"]["combatants"]["goblin-1"]["hp"], 0)
         self.assertFalse(state["combat"]["active"])
         self.assertEqual(state["combat"]["winner_side"], "player")
 
-    def test_negative_damage_is_rejected_before_combat_resolution(self):
+    def test_negative_damage_modifier_is_allowed_and_clamped_at_zero(self):
         state = {}
         self.start(state)
         before = repr(state)
 
-        with self.assertRaises(ValueError):
-            self.apply(
-                state,
-                {
-                    "type": "attack",
-                    "actor_id": "player",
-                    "target_id": "goblin-1",
-                    "attack_bonus": 5,
-                    "damage": {"dice": "1d8", "modifier": -1},
-                },
-            )
-
-        self.assertEqual(repr(state), before)
+        result = self.apply(
+            state,
+            {
+                "type": "attack",
+                "actor_id": "player",
+                "target_id": "goblin-1",
+                "attack_bonus": 5,
+                "damage": {"dice": "1d8", "modifier": -10},
+            },
+            randbelow=self.sequence(15, 1),
+        )
+        self.assertEqual(result["outcome"]["damage"], 0)
+        self.assertNotEqual(repr(state), before)
 
     def test_hp_zero_requires_consistent_unconscious_state(self):
         state = {}
@@ -732,7 +733,7 @@ class CombatVerticalSliceTests(unittest.TestCase):
         self.attack(state, d20=20, d8=1)
 
         target = state["combat"]["combatants"]["goblin-1"]
-        self.assertEqual(target["hp"], 3)
+        self.assertEqual(target["hp"], 2)
         self.assertFalse(target["unconscious"])
 
     def test_unconscious_current_actor_is_not_selected_at_combat_start(self):

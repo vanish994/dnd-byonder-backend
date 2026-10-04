@@ -46,7 +46,12 @@ def _equipped(character: dict[str, Any]) -> dict[str, str | None]:
 
 
 def item_definition(item_id: str, item: dict[str, Any] | None = None) -> dict[str, Any]:
-    definition = deepcopy(item or ITEM_CATALOG.get(item_id))
+    catalog_definition = ITEM_CATALOG.get(item_id)
+    if catalog_definition is None:
+        raise ValueError("unknown item")
+    if item is not None and item != catalog_definition:
+        raise ValueError("item definition must match the authoritative catalog")
+    definition = deepcopy(catalog_definition)
     if not isinstance(definition, dict):
         raise ValueError("unknown item")
     if definition.get("id", item_id) != item_id:

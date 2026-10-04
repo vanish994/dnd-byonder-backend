@@ -128,7 +128,7 @@ class ProgressionTests(unittest.TestCase):
         self.assertEqual(result["outcome"]["hp_gain"], 8)
         self.assertIn("action_surge", character["class_features"])
         self.assertEqual(character["resources"]["second_wind"], {
-            "id": "second_wind", "current": 2, "maximum": 2, "recovery": "short_rest",
+            "id": "second_wind", "current": 2, "maximum": 2, "recovery": "short_rest", "recovery_amount": 1,
         })
         self.assertEqual(derive_character(character)[1]["proficiency_bonus"], 2)
 
@@ -202,6 +202,32 @@ class ProgressionTests(unittest.TestCase):
         self.assertEqual(result["outcome"]["healing"], 8)
         self.assertEqual(state["combat"]["combatants"]["player"]["hp"], 11)
         self.assertEqual(state["combat"]["combatants"]["player"]["character"]["resources"]["second_wind"]["current"], 1)
+
+    def test_second_wind_short_rest_recovers_one_use_and_long_rest_recovers_all(self):
+        character = api.build_guided_character(api.GuidedCharacterRequest(
+            name="Resting", class_id="fighter", level=4,
+            abilities={
+                "strength": 15, "dexterity": 14, "constitution": 13,
+                "intelligence": 12, "wisdom": 10, "charisma": 8,
+            },
+            skills=["athletics", "perception"], weapon_id="longsword",
+        ))
+        state = {"character": api.character_to_state(character)}
+        state["character"]["resources"]["second_wind"]["current"] = 1
+        self.apply({"type": "rest", "rest_type": "short_rest"}, state=state)
+        self.assertEqual(state["character"]["resources"]["second_wind"]["current"], 2)
+        self.apply({"type": "rest", "rest_type": "long_rest"}, state=state)
+        self.assertEqual(state["character"]["resources"]["second_wind"]["current"], 3)
+
+    def test_class_and_item_authority_reject_forged_state_definitions(self):
+        forged = deepcopy(CHARACTER)
+        forged["proficiencies"] = {"skills": ["athletics", "perception", "arcana"], "saving_throws": ["strength", "constitution"]}
+        with self.assertRaises(ValueError):
+            Character.model_validate(forged)
+        forged_item = deepcopy(CHARACTER)
+        forged_item["inventory"] = {"longsword": {"quantity": 1, "item": {**CHARACTER["weapons"]["longsword"], "damage_dice": "99d99"}}}
+        with self.assertRaises(ValueError):
+            Character.model_validate(forged_item)
 
     def test_public_http_accepts_experience_and_level_up_without_changing_resolution_schema(self):
         previous_key = api.API_KEY

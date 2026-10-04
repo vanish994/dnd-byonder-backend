@@ -26,7 +26,7 @@ from game.orchestrator import (
     NarrationError,
     RuleResolutionError,
 )
-from rule_engine.classes import class_features, class_resource_maximum, class_resource_recovery
+from rule_engine.classes import class_features, class_resource_maximum, class_resource_recovery, class_resource_recovery_amount
 from rule_engine.conditions import (
     advance_condition_durations,
     clear_conditions_for_rest,
@@ -133,7 +133,7 @@ class SavingThrowAction(BaseModel):
 
 class AttackDamage(BaseModel):
     dice: StrictStr = Field(min_length=2, max_length=20)
-    modifier: StrictInt = Field(ge=0, le=MAX_MODIFIER)
+    modifier: StrictInt = Field(ge=-MAX_MODIFIER, le=MAX_MODIFIER)
 
     class Config:
         extra = 'forbid'
@@ -233,6 +233,7 @@ class ResourceAction(BaseModel):
     maximum: StrictInt | None = Field(default=None, ge=0)
     current: StrictInt | None = Field(default=None, ge=0)
     recovery: Literal['short_rest', 'long_rest', 'turn', 'never'] = 'never'
+    recovery_amount: StrictInt | None = Field(default=None, gt=0)
 
     @model_validator(mode='after')
     def validate_operation(self):
@@ -240,6 +241,8 @@ class ResourceAction(BaseModel):
             raise ValueError('resource definition requires maximum')
         if self.type != 'define_resource' and self.maximum is not None:
             raise ValueError('maximum is only valid when defining a resource')
+        if self.type != 'define_resource' and self.recovery_amount is not None:
+            raise ValueError('recovery_amount is only valid when defining a resource')
         if self.type == 'consume_resource':
             if self.amount is None:
                 self.amount = 1
@@ -990,6 +993,7 @@ def _sync_class_resources(character_state: dict[str, Any], character: Character)
     resource_id = 'second_wind'
     maximum = class_resource_maximum(character.class_.id, resource_id, character.level)
     recovery = class_resource_recovery(character.class_.id, resource_id)
+    recovery_amount = class_resource_recovery_amount(character.class_.id, resource_id)
     existing = resources.get(resource_id)
     if existing is None:
         current = maximum
@@ -1006,6 +1010,7 @@ def _sync_class_resources(character_state: dict[str, Any], character: Character)
         'current': current,
         'maximum': maximum,
         'recovery': recovery,
+        **({'recovery_amount': recovery_amount} if recovery_amount is not None else {}),
     }
 
 
@@ -1052,12 +1057,15 @@ def resolve_resource(body: ResolveRequest) -> dict[str, Any]:
         raise TypeError('resolve_resource requires a validated action')
     character = _mutable_character_state(body.state, action.character_id)
     if action.type == 'define_resource':
+        if action.resource_id == 'second_wind':
+            raise ValueError('class resources are server-owned')
         resource = define_resource(
             character,
             action.resource_id,
             maximum=action.maximum,
             current=action.current,
             recovery=action.recovery,
+            recovery_amount=action.recovery_amount,
         )
     elif action.type == 'consume_resource':
         resource = consume_resource(character, action.resource_id, action.amount)
@@ -1757,9 +1765,16 @@ def resolve_attack(
     rolls = [attack_roll]
     rules_used = [ATTACK_ROLL_RULE_ID]
     if hit and action.damage is not None:
-        damage_roll = roll_dice(action.damage.dice, randbelow=randbelow)
-        damage_result = damage_roll['rolls'][0] + action.damage.modifier
-        rolls.append({'type': 'd8', 'result': damage_roll['rolls'][0]})
+        damage_rolls = [roll_dice(action.damage.dice, randbelow=randbelow)]
+        if critical:
+            damage_rolls.append(roll_dice(action.damage.dice, randbelow=randbelow))
+        dice_results = [result for damage_roll in damage_rolls for result in damage_roll['rolls']]
+        damage_result = max(0, sum(dice_results) + action.damage.modifier)
+        rolls.append({
+            'type': action.damage.dice,
+            'results': dice_results,
+            'critical': critical,
+        })
         rules_used.append(ATTACK_DAMAGE_RULE_ID)
     check = {
         'attack_bonus': action.attack_bonus,

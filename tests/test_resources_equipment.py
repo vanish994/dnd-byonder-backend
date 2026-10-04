@@ -46,15 +46,15 @@ class ResourcesEquipmentTests(unittest.TestCase):
         return lambda upper_bound: next(values) - 1
 
     def test_resource_is_generic_deterministic_and_bounded(self):
-        self.apply({"type": "define_resource", "resource_id": "second_wind", "maximum": 2, "recovery": "short_rest"})
-        self.apply({"type": "consume_resource", "resource_id": "second_wind", "amount": 2})
-        self.assertEqual(self.state["character"]["resources"]["second_wind"]["current"], 0)
+        self.apply({"type": "define_resource", "resource_id": "test_power", "maximum": 2, "recovery": "short_rest", "recovery_amount": 1})
+        self.apply({"type": "consume_resource", "resource_id": "test_power", "amount": 2})
+        self.assertEqual(self.state["character"]["resources"]["test_power"]["current"], 0)
         before = deepcopy(self.state)
         with self.assertRaisesRegex(ValueError, "insufficient"):
-            self.apply({"type": "consume_resource", "resource_id": "second_wind"})
+            self.apply({"type": "consume_resource", "resource_id": "test_power"})
         self.assertEqual(self.state, before)
-        self.apply({"type": "recover_resource", "resource_id": "second_wind", "amount": 99})
-        self.assertEqual(self.state["character"]["resources"]["second_wind"]["current"], 2)
+        self.apply({"type": "rest", "rest_type": "short_rest"})
+        self.assertEqual(self.state["character"]["resources"]["test_power"]["current"], 1)
 
     def test_long_rest_recovers_short_rest_resources_and_turn_resources_reset_at_turn_start(self):
         self.apply({"type": "define_resource", "resource_id": "short_power", "maximum": 1, "current": 0, "recovery": "short_rest"})

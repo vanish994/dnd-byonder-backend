@@ -20,12 +20,19 @@ def _validate_resource(resource_id: str, resource: dict[str, Any]) -> None:
     maximum = resource.get("maximum")
     current = resource.get("current")
     recovery = resource.get("recovery", "never")
+    recovery_amount = resource.get("recovery_amount")
     if not isinstance(maximum, int) or isinstance(maximum, bool) or maximum < 0:
         raise ValueError("resource maximum must be a non-negative integer")
     if not isinstance(current, int) or isinstance(current, bool) or not 0 <= current <= maximum:
         raise ValueError("resource current must be between zero and maximum")
     if recovery not in RECOVERY_POLICIES:
         raise ValueError(f"unknown resource recovery policy: {recovery}")
+    if recovery_amount is not None and (
+        not isinstance(recovery_amount, int)
+        or isinstance(recovery_amount, bool)
+        or recovery_amount <= 0
+    ):
+        raise ValueError("resource recovery amount must be a positive integer")
 
 
 def validate_resources(owner: dict[str, Any]) -> None:
@@ -40,6 +47,7 @@ def define_resource(
     maximum: int,
     current: int | None = None,
     recovery: str = "never",
+    recovery_amount: int | None = None,
 ) -> dict[str, Any]:
     resources = _resources(owner)
     if resource_id in resources:
@@ -49,6 +57,7 @@ def define_resource(
         "current": maximum if current is None else current,
         "maximum": maximum,
         "recovery": recovery,
+        **({"recovery_amount": recovery_amount} if recovery_amount is not None else {}),
     }
     _validate_resource(resource_id, resource)
     resources[resource_id] = resource
@@ -94,8 +103,10 @@ def recover_for_rest(owner: dict[str, Any], rest_type: str) -> list[str]:
         if resource["recovery"] == rest_type or (
             rest_type == "long_rest" and resource["recovery"] == "short_rest"
         ):
+            recovery_amount = None if rest_type == "long_rest" else resource.get("recovery_amount")
+            requested = resource["maximum"] if recovery_amount is None else recovery_amount
             if resource["current"] != resource["maximum"]:
-                resource["current"] = resource["maximum"]
+                resource["current"] = min(resource["maximum"], resource["current"] + requested)
                 recovered.append(resource_id)
     return recovered
 

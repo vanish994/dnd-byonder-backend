@@ -53,6 +53,7 @@ CLASS_REGISTRY: dict[str, dict[str, Any]] = {
         "resources_by_level": {
             "second_wind": {
                 "recovery": "short_rest",
+                "recovery_amount": 1,
                 "maximum_by_level": {
                     1: 2, 2: 2, 3: 2, 4: 3, 5: 3, 6: 3, 7: 3, 8: 3, 9: 3,
                     10: 4, 11: 4, 12: 4, 13: 4, 14: 4, 15: 4, 16: 4,
@@ -98,3 +99,11 @@ def class_resource_recovery(class_id: str, resource_id: str) -> str:
     if resource is None:
         raise ValueError(f"unsupported class resource: {resource_id}")
     return resource["recovery"]
+
+
+def class_resource_recovery_amount(class_id: str, resource_id: str) -> int | None:
+    definition = class_definition(class_id)
+    resource = definition.get("resources_by_level", {}).get(resource_id)
+    if resource is None:
+        raise ValueError(f"unsupported class resource: {resource_id}")
+    return resource.get("recovery_amount")

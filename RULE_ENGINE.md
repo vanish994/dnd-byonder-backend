@@ -34,7 +34,9 @@ O Rule Engine também aceita ações estruturadas de `rest`, `define_resource`, 
 
 A progressão R5 usa a tabela oficial de XP do material D&D 2024 disponível no projeto, com níveis de 1 a 20 e bônus de proficiência derivado exclusivamente do nível total. As ações `add_experience` e `level_up` são resolvidas pelo engine; a primeira acumula XP e informa a disponibilidade de avanço, e a segunda aplica um nível por vez de forma atômica. O registry de classes mantém dados de Fighter, features por nível, proficiências, equipamento inicial e recursos dependentes de nível. Features ainda sem resolver mecânico próprio permanecem como metadados explícitos e não são simuladas pelo narrador.
 
-O recurso `second_wind` do Fighter é uma exceção já resolvida mecanicamente: a ação `second_wind` consome uma unidade no combate, usa `1d10 + nível de Fighter`, limita a cura ao HP máximo e recupera usos conforme a política de short rest/long rest do subsistema genérico.
+O recurso `second_wind` do Fighter é uma exceção já resolvida mecanicamente: a ação `second_wind` consome uma unidade no combate, usa `1d10 + nível de Fighter`, limita a cura ao HP máximo e recupera **um uso em short rest** e **todos os usos em long rest**. A política é expressa genericamente por `recovery_amount`, não por uma exceção específica do Fighter.
+
+Na resolução de ataques, modificadores de dano podem ser negativos, o dano final é limitado a zero, um acerto crítico rola os dados de dano duas vezes e o envelope preserva a expressão de dados real da arma. Proficiências de classe, definições de itens do catálogo e recursos de classe são validados contra registries server-owned; payloads não podem forjar essas definições mecânicas.
 
 ### Configuração
 
