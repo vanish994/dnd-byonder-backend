@@ -3,6 +3,8 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
+from rule_engine.character_creation_catalog import CLASS_RUNTIME_DEFINITIONS
+
 
 # The registry contains only rules present in the project's 2024 source material.
 # Feature identifiers are authoritative metadata until a dedicated resolver exists.
@@ -73,6 +75,13 @@ CLASS_REGISTRY: dict[str, dict[str, Any]] = {
         "attacks_by_level": {1: 1, 5: 2, 11: 3, 20: 4},
     },
 }
+
+# The 2024 PHB catalog adds every class to character creation. Only the existing
+# Fighter definition has a fully implemented level progression in this engine;
+# other classes are explicitly bounded to level 1 until their mechanics ship.
+for _class_id, _definition in CLASS_RUNTIME_DEFINITIONS.items():
+    if _class_id != "fighter":
+        CLASS_REGISTRY[_class_id] = deepcopy(_definition)
 
 
 def class_definition(class_id: str) -> dict[str, Any]:

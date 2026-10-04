@@ -1,0 +1,2308 @@
+{
+  "schema_version": "character-options-phb2024-v1",
+  "edition": "2024",
+  "classes": [
+    {
+      "id": "barbarian",
+      "label_pt_br": "Bárbaro",
+      "source_name": "Barbarian",
+      "source_location": "Player’s Handbook 2024, Chapter 3: Character Classes — “Core Barbarian Traits,” “Becoming a Barbarian,” “Rage,” “Level 1: Unarmored Defense,” “Level 1: Weapon Mastery” e tabela “Barbarian Features,” páginas impressas 51–52.",
+      "runtime": {
+        "hit_die": 12,
+        "fixed_hp_per_level": 7,
+        "primary_abilities": [
+          "strength"
+        ],
+        "saving_throw_proficiencies": [
+          "strength",
+          "constitution"
+        ],
+        "skill_proficiencies": {
+          "count": 2,
+          "options": [
+            "animal_handling",
+            "athletics",
+            "intimidation",
+            "nature",
+            "perception",
+            "survival"
+          ]
+        },
+        "weapon_proficiencies": [
+          "simple",
+          "martial"
+        ],
+        "armor_proficiencies": [
+          "light",
+          "medium",
+          "shields"
+        ],
+        "features_by_level": {
+          "1": [
+            "rage",
+            "unarmored_defense",
+            "weapon_mastery"
+          ]
+        },
+        "resources_by_level": {},
+        "attacks_by_level": {
+          "1": 1
+        },
+        "max_supported_level": 1,
+        "source_location": "Player’s Handbook 2024, Chapter 3: Character Classes — “Core Barbarian Traits,” “Becoming a Barbarian,” “Rage,” “Level 1: Unarmored Defense,” “Level 1: Weapon Mastery” e tabela “Barbarian Features,” páginas impressas 51–52.",
+        "starting_equipment": [
+          {
+            "id": "A",
+            "items": [
+              {
+                "name": "machado grande (Greataxe)",
+                "quantity": 1
+              },
+              {
+                "name": "4 machadinhas (Handaxes)",
+                "quantity": 1
+              },
+              {
+                "name": "Pacote de Explorador (Explorer’s Pack)",
+                "quantity": 1
+              }
+            ],
+            "gold_gp": 15
+          },
+          {
+            "id": "B",
+            "items": [],
+            "gold_gp": 75
+          }
+        ],
+        "level_1_feature_entries": [
+          {
+            "id": "rage",
+            "name": "Rage"
+          },
+          {
+            "id": "unarmored_defense",
+            "name": "Unarmored Defense"
+          },
+          {
+            "id": "weapon_mastery",
+            "name": "Weapon Mastery"
+          }
+        ]
+      }
+    },
+    {
+      "id": "bard",
+      "label_pt_br": "Bardo",
+      "source_name": "Bard",
+      "source_location": "Player’s Handbook 2024, Capítulo 3: Character Classes, entrada Bard — Core Bard Traits e Bard Class Features, p. 58–59 (p. 58 confirmada no texto extraído; a tabela de características aparece na página seguinte).",
+      "runtime": {
+        "hit_die": 8,
+        "fixed_hp_per_level": 5,
+        "primary_abilities": [
+          "charisma"
+        ],
+        "saving_throw_proficiencies": [
+          "dexterity",
+          "charisma"
+        ],
+        "skill_proficiencies": {
+          "count": 3,
+          "options": [
+            "acrobatics",
+            "animal_handling",
+            "arcana",
+            "athletics",
+            "deception",
+            "history",
+            "insight",
+            "intimidation",
+            "investigation",
+            "medicine",
+            "nature",
+            "perception",
+            "performance",
+            "persuasion",
+            "religion",
+            "sleight_of_hand",
+            "stealth",
+            "survival"
+          ]
+        },
+        "weapon_proficiencies": [
+          "simple"
+        ],
+        "armor_proficiencies": [
+          "light"
+        ],
+        "features_by_level": {
+          "1": [
+            "bardic_inspiration",
+            "spellcasting"
+          ]
+        },
+        "resources_by_level": {},
+        "attacks_by_level": {
+          "1": 1
+        },
+        "max_supported_level": 1,
+        "source_location": "Player’s Handbook 2024, Capítulo 3: Character Classes, entrada Bard — Core Bard Traits e Bard Class Features, p. 58–59 (p. 58 confirmada no texto extraído; a tabela de características aparece na página seguinte).",
+        "starting_equipment": [
+          {
+            "id": "A",
+            "items": [
+              {
+                "name": "Armadura de couro",
+                "quantity": 1
+              },
+              {
+                "name": "2 adagas",
+                "quantity": 1
+              },
+              {
+                "name": "1 instrumento musical à escolha",
+                "quantity": 1
+              },
+              {
+                "name": "Pacote de artista",
+                "quantity": 1
+              }
+            ],
+            "gold_gp": 19
+          },
+          {
+            "id": "B",
+            "items": [],
+            "gold_gp": 90
+          }
+        ],
+        "level_1_feature_entries": [
+          {
+            "id": "bardic_inspiration",
+            "name": "Bardic Inspiration"
+          },
+          {
+            "id": "spellcasting",
+            "name": "Spellcasting"
+          }
+        ]
+      }
+    },
+    {
+      "id": "cleric",
+      "label_pt_br": "Clérigo",
+      "source_name": "Cleric",
+      "source_location": "Player’s Handbook 2024, Chapter 3: Character Classes — Core Cleric Traits (p. 68); Level 1: Spellcasting (p. 69); Cleric Features table and Level 1: Divine Order (p. 70); Cleric Spell List (p. 71).",
+      "runtime": {
+        "hit_die": 8,
+        "fixed_hp_per_level": 5,
+        "primary_abilities": [
+          "wisdom"
+        ],
+        "saving_throw_proficiencies": [
+          "wisdom",
+          "charisma"
+        ],
+        "skill_proficiencies": {
+          "count": 2,
+          "options": [
+            "history",
+            "insight",
+            "medicine",
+            "persuasion",
+            "religion"
+          ]
+        },
+        "weapon_proficiencies": [
+          "simple"
+        ],
+        "armor_proficiencies": [
+          "light",
+          "medium",
+          "shields"
+        ],
+        "features_by_level": {
+          "1": [
+            "spellcasting",
+            "divine_order"
+          ]
+        },
+        "resources_by_level": {},
+        "attacks_by_level": {
+          "1": 1
+        },
+        "max_supported_level": 1,
+        "source_location": "Player’s Handbook 2024, Chapter 3: Character Classes — Core Cleric Traits (p. 68); Level 1: Spellcasting (p. 69); Cleric Features table and Level 1: Divine Order (p. 70); Cleric Spell List (p. 71).",
+        "starting_equipment": [
+          {
+            "id": "A",
+            "items": [
+              {
+                "name": "Chain Shirt",
+                "quantity": 1
+              },
+              {
+                "name": "Shield",
+                "quantity": 1
+              },
+              {
+                "name": "Mace",
+                "quantity": 1
+              },
+              {
+                "name": "Holy Symbol",
+                "quantity": 1
+              },
+              {
+                "name": "Priest’s Pack",
+                "quantity": 1
+              }
+            ],
+            "gold_gp": 7
+          },
+          {
+            "id": "B",
+            "items": [],
+            "gold_gp": 110
+          }
+        ],
+        "level_1_feature_entries": [
+          {
+            "id": "spellcasting",
+            "name": "Spellcasting"
+          },
+          {
+            "id": "divine_order",
+            "name": "Divine Order"
+          }
+        ]
+      }
+    },
+    {
+      "id": "druid",
+      "label_pt_br": "Druida",
+      "source_name": "Druid",
+      "source_location": "Player’s Handbook 2024, capítulo 3, ‘Druid’ / ‘Druid Class Features’, pp. 78–79 (nível 1); ‘Level 1: Spellcasting’, ‘Level 1: Druidic’ e ‘Level 1: Primal Order’.",
+      "runtime": {
+        "hit_die": 8,
+        "fixed_hp_per_level": 5,
+        "primary_abilities": [
+          "wisdom"
+        ],
+        "saving_throw_proficiencies": [
+          "intelligence",
+          "wisdom"
+        ],
+        "skill_proficiencies": {
+          "count": 2,
+          "options": [
+            "arcana",
+            "animal_handling",
+            "insight",
+            "medicine",
+            "nature",
+            "perception",
+            "religion",
+            "survival"
+          ]
+        },
+        "weapon_proficiencies": [
+          "simple"
+        ],
+        "armor_proficiencies": [
+          "light",
+          "shields"
+        ],
+        "features_by_level": {
+          "1": [
+            "spellcasting",
+            "druidic",
+            "primal_order"
+          ]
+        },
+        "resources_by_level": {},
+        "attacks_by_level": {
+          "1": 1
+        },
+        "max_supported_level": 1,
+        "source_location": "Player’s Handbook 2024, capítulo 3, ‘Druid’ / ‘Druid Class Features’, pp. 78–79 (nível 1); ‘Level 1: Spellcasting’, ‘Level 1: Druidic’ e ‘Level 1: Primal Order’.",
+        "starting_equipment": [
+          {
+            "id": "A",
+            "items": [
+              {
+                "name": "armadura de couro",
+                "quantity": 1
+              },
+              {
+                "name": "escudo",
+                "quantity": 1
+              },
+              {
+                "name": "foice",
+                "quantity": 1
+              },
+              {
+                "name": "foco druídico (bordão)",
+                "quantity": 1
+              },
+              {
+                "name": "pacote de explorador",
+                "quantity": 1
+              },
+              {
+                "name": "kit de herbalismo",
+                "quantity": 1
+              }
+            ],
+            "gold_gp": 9
+          },
+          {
+            "id": "B",
+            "items": [],
+            "gold_gp": 50
+          }
+        ],
+        "level_1_feature_entries": [
+          {
+            "id": "spellcasting",
+            "name": "Spellcasting"
+          },
+          {
+            "id": "druidic",
+            "name": "Druidic"
+          },
+          {
+            "id": "primal_order",
+            "name": "Primal Order"
+          }
+        ]
+      }
+    },
+    {
+      "id": "fighter",
+      "label_pt_br": "Guerreiro",
+      "source_name": "Fighter",
+      "source_location": "Player’s Handbook 2024, capítulo 3, “Core Fighter Traits” e “Fighter Class Features”, pp. 90–91; referência à categoria “Fighting Style Feats”, capítulo 5, p. 209.",
+      "runtime": {
+        "hit_die": 10,
+        "fixed_hp_per_level": 6,
+        "primary_abilities": [
+          "strength",
+          "dexterity"
+        ],
+        "saving_throw_proficiencies": [
+          "strength",
+          "constitution"
+        ],
+        "skill_proficiencies": {
+          "count": 2,
+          "options": [
+            "acrobatics",
+            "animal_handling",
+            "athletics",
+            "history",
+            "insight",
+            "intimidation",
+            "persuasion",
+            "perception",
+            "survival"
+          ]
+        },
+        "weapon_proficiencies": [
+          "simple",
+          "martial"
+        ],
+        "armor_proficiencies": [
+          "light",
+          "medium",
+          "heavy",
+          "shields"
+        ],
+        "features_by_level": {
+          "1": [
+            "estilo_de_luta",
+            "segundo_folego",
+            "maestria_em_armas"
+          ]
+        },
+        "resources_by_level": {},
+        "attacks_by_level": {
+          "1": 1
+        },
+        "max_supported_level": 1,
+        "source_location": "Player’s Handbook 2024, capítulo 3, “Core Fighter Traits” e “Fighter Class Features”, pp. 90–91; referência à categoria “Fighting Style Feats”, capítulo 5, p. 209.",
+        "starting_equipment": [
+          {
+            "id": "A",
+            "items": [
+              {
+                "name": "Cota de malha",
+                "quantity": 1
+              },
+              {
+                "name": "Espadão",
+                "quantity": 1
+              },
+              {
+                "name": "Mangual",
+                "quantity": 1
+              },
+              {
+                "name": "8 azagaias",
+                "quantity": 1
+              },
+              {
+                "name": "Pacote de explorador de masmorras",
+                "quantity": 1
+              }
+            ],
+            "gold_gp": 4
+          },
+          {
+            "id": "B",
+            "items": [
+              {
+                "name": "Armadura de couro batido",
+                "quantity": 1
+              },
+              {
+                "name": "Cimitarra",
+                "quantity": 1
+              },
+              {
+                "name": "Espada curta",
+                "quantity": 1
+              },
+              {
+                "name": "Arco longo",
+                "quantity": 1
+              },
+              {
+                "name": "20 flechas",
+                "quantity": 1
+              },
+              {
+                "name": "Aljava",
+                "quantity": 1
+              },
+              {
+                "name": "Pacote de explorador de masmorras",
+                "quantity": 1
+              }
+            ],
+            "gold_gp": 11
+          },
+          {
+            "id": "C",
+            "items": [],
+            "gold_gp": 155
+          }
+        ],
+        "level_1_feature_entries": [
+          {
+            "id": "estilo_de_luta",
+            "name": "Estilo de Luta"
+          },
+          {
+            "id": "segundo_folego",
+            "name": "Segundo Fôlego"
+          },
+          {
+            "id": "maestria_em_armas",
+            "name": "Maestria em Armas"
+          }
+        ]
+      }
+    },
+    {
+      "id": "monk",
+      "label_pt_br": "Monge",
+      "source_name": "Monk",
+      "source_location": "Player’s Handbook 2024, Chapter 3: Character Classes, “Core Monk Traits,” “Level 1: Martial Arts” e “Level 1: Unarmored Defense,” pp. 101–102 (paginação impressa).",
+      "runtime": {
+        "hit_die": 8,
+        "fixed_hp_per_level": 5,
+        "primary_abilities": [
+          "dexterity",
+          "wisdom"
+        ],
+        "saving_throw_proficiencies": [
+          "strength",
+          "dexterity"
+        ],
+        "skill_proficiencies": {
+          "count": 2,
+          "options": [
+            "acrobatics",
+            "athletics",
+            "history",
+            "insight",
+            "religion",
+            "stealth"
+          ]
+        },
+        "weapon_proficiencies": [
+          "simple",
+          "martial_light"
+        ],
+        "armor_proficiencies": [],
+        "features_by_level": {
+          "1": [
+            "artes_marciais",
+            "defesa_sem_armadura"
+          ]
+        },
+        "resources_by_level": {},
+        "attacks_by_level": {
+          "1": 1
+        },
+        "max_supported_level": 1,
+        "source_location": "Player’s Handbook 2024, Chapter 3: Character Classes, “Core Monk Traits,” “Level 1: Martial Arts” e “Level 1: Unarmored Defense,” pp. 101–102 (paginação impressa).",
+        "starting_equipment": [
+          {
+            "id": "A",
+            "items": [
+              {
+                "name": "Lança",
+                "quantity": 1
+              },
+              {
+                "name": "5 adagas",
+                "quantity": 1
+              },
+              {
+                "name": "Ferramentas de artesão ou instrumento musical escolhido para a proficiência",
+                "quantity": 1
+              },
+              {
+                "name": "Pacote de explorador",
+                "quantity": 1
+              }
+            ],
+            "gold_gp": 11
+          },
+          {
+            "id": "B",
+            "items": [],
+            "gold_gp": 50
+          }
+        ],
+        "level_1_feature_entries": [
+          {
+            "id": "artes_marciais",
+            "name": "Artes Marciais"
+          },
+          {
+            "id": "defesa_sem_armadura",
+            "name": "Defesa sem Armadura"
+          }
+        ]
+      }
+    },
+    {
+      "id": "paladin",
+      "label_pt_br": "Paladino",
+      "source_name": "Paladin",
+      "source_location": "Player’s Handbook 2024, Capítulo 3, seção ‘Paladin’: ‘Core Paladin Traits’ e equipamento inicial, p. 108; ‘Paladin Class Features’ e tabela ‘Paladin Features’, pp. 108–109.",
+      "runtime": {
+        "hit_die": 10,
+        "fixed_hp_per_level": 6,
+        "primary_abilities": [
+          "strength",
+          "charisma"
+        ],
+        "saving_throw_proficiencies": [
+          "wisdom",
+          "charisma"
+        ],
+        "skill_proficiencies": {
+          "count": 2,
+          "options": [
+            "athletics",
+            "insight",
+            "intimidation",
+            "medicine",
+            "persuasion",
+            "religion"
+          ]
+        },
+        "weapon_proficiencies": [
+          "simple",
+          "martial"
+        ],
+        "armor_proficiencies": [
+          "light",
+          "medium",
+          "heavy",
+          "shields"
+        ],
+        "features_by_level": {
+          "1": [
+            "lay_on_hands",
+            "spellcasting",
+            "weapon_mastery"
+          ]
+        },
+        "resources_by_level": {},
+        "attacks_by_level": {
+          "1": 1
+        },
+        "max_supported_level": 1,
+        "source_location": "Player’s Handbook 2024, Capítulo 3, seção ‘Paladin’: ‘Core Paladin Traits’ e equipamento inicial, p. 108; ‘Paladin Class Features’ e tabela ‘Paladin Features’, pp. 108–109.",
+        "starting_equipment": [
+          {
+            "id": "A",
+            "items": [
+              {
+                "name": "Cota de Malha",
+                "quantity": 1
+              },
+              {
+                "name": "Escudo",
+                "quantity": 1
+              },
+              {
+                "name": "Espada Longa",
+                "quantity": 1
+              },
+              {
+                "name": "6 Azagaias",
+                "quantity": 1
+              },
+              {
+                "name": "Símbolo Sagrado",
+                "quantity": 1
+              },
+              {
+                "name": "Pacote de Sacerdote",
+                "quantity": 1
+              }
+            ],
+            "gold_gp": 9
+          },
+          {
+            "id": "B",
+            "items": [],
+            "gold_gp": 150
+          }
+        ],
+        "level_1_feature_entries": [
+          {
+            "id": "lay_on_hands",
+            "name": "Imposição das Mãos"
+          },
+          {
+            "id": "spellcasting",
+            "name": "Conjuração"
+          },
+          {
+            "id": "weapon_mastery",
+            "name": "Maestria com Armas"
+          }
+        ]
+      }
+    },
+    {
+      "id": "ranger",
+      "label_pt_br": "Patrulheiro",
+      "source_name": "Ranger",
+      "source_location": "Player’s Handbook 2024, seção “Core Ranger Traits”, “Ranger Class Features” e “Ranger Features”; localização na transcrição fornecida, páginas impressas não confirmadas.",
+      "runtime": {
+        "hit_die": 10,
+        "fixed_hp_per_level": 6,
+        "primary_abilities": [
+          "dexterity",
+          "wisdom"
+        ],
+        "saving_throw_proficiencies": [
+          "strength",
+          "dexterity"
+        ],
+        "skill_proficiencies": {
+          "count": 3,
+          "options": [
+            "animal_handling",
+            "athletics",
+            "insight",
+            "investigation",
+            "nature",
+            "perception",
+            "stealth",
+            "survival"
+          ]
+        },
+        "weapon_proficiencies": [
+          "simple",
+          "martial"
+        ],
+        "armor_proficiencies": [
+          "light",
+          "medium",
+          "shields"
+        ],
+        "features_by_level": {
+          "1": [
+            "conjuracao",
+            "inimigo_favorito",
+            "maestria_em_armas"
+          ]
+        },
+        "resources_by_level": {},
+        "attacks_by_level": {
+          "1": 1
+        },
+        "max_supported_level": 1,
+        "source_location": "Player’s Handbook 2024, seção “Core Ranger Traits”, “Ranger Class Features” e “Ranger Features”; localização na transcrição fornecida, páginas impressas não confirmadas.",
+        "starting_equipment": [
+          {
+            "id": "A",
+            "items": [
+              {
+                "name": "Armadura de couro batido",
+                "quantity": 1
+              },
+              {
+                "name": "Cimitarra",
+                "quantity": 1
+              },
+              {
+                "name": "Espada curta",
+                "quantity": 1
+              },
+              {
+                "name": "Arco longo",
+                "quantity": 1
+              },
+              {
+                "name": "20 flechas",
+                "quantity": 1
+              },
+              {
+                "name": "Aljava",
+                "quantity": 1
+              },
+              {
+                "name": "Foco Druídico (ramo de visco)",
+                "quantity": 1
+              },
+              {
+                "name": "Pacote de Explorador",
+                "quantity": 1
+              }
+            ],
+            "gold_gp": 7
+          },
+          {
+            "id": "B",
+            "items": [],
+            "gold_gp": 150
+          }
+        ],
+        "level_1_feature_entries": [
+          {
+            "id": "conjuracao",
+            "name": "Conjuração"
+          },
+          {
+            "id": "inimigo_favorito",
+            "name": "Inimigo Favorito"
+          },
+          {
+            "id": "maestria_em_armas",
+            "name": "Maestria em Armas"
+          }
+        ]
+      }
+    },
+    {
+      "id": "rogue",
+      "label_pt_br": "Ladino",
+      "source_name": "Rogue",
+      "source_location": "Player’s Handbook 2024, Capítulo 3: Character Classes, seção Rogue — Core Rogue Traits e Rogue Class Features (nível 1); início da seção indicado no sumário na p. 128, com continuação na p. 129.",
+      "runtime": {
+        "hit_die": 8,
+        "fixed_hp_per_level": 5,
+        "primary_abilities": [
+          "dexterity"
+        ],
+        "saving_throw_proficiencies": [
+          "dexterity",
+          "intelligence"
+        ],
+        "skill_proficiencies": {
+          "count": 4,
+          "options": [
+            "acrobatics",
+            "athletics",
+            "deception",
+            "insight",
+            "intimidation",
+            "investigation",
+            "perception",
+            "persuasion",
+            "sleight_of_hand",
+            "stealth"
+          ]
+        },
+        "weapon_proficiencies": [
+          "simple",
+          "martial_finesse_or_light"
+        ],
+        "armor_proficiencies": [
+          "light"
+        ],
+        "features_by_level": {
+          "1": [
+            "expertise",
+            "sneak_attack",
+            "thieves_cant",
+            "weapon_mastery"
+          ]
+        },
+        "resources_by_level": {},
+        "attacks_by_level": {
+          "1": 1
+        },
+        "max_supported_level": 1,
+        "source_location": "Player’s Handbook 2024, Capítulo 3: Character Classes, seção Rogue — Core Rogue Traits e Rogue Class Features (nível 1); início da seção indicado no sumário na p. 128, com continuação na p. 129.",
+        "starting_equipment": [
+          {
+            "id": "A",
+            "items": [
+              {
+                "name": "Armadura de couro",
+                "quantity": 1
+              },
+              {
+                "name": "2 adagas",
+                "quantity": 1
+              },
+              {
+                "name": "Espada curta",
+                "quantity": 1
+              },
+              {
+                "name": "Arco curto",
+                "quantity": 1
+              },
+              {
+                "name": "20 flechas",
+                "quantity": 1
+              },
+              {
+                "name": "Aljava",
+                "quantity": 1
+              },
+              {
+                "name": "Ferramentas de ladrão",
+                "quantity": 1
+              },
+              {
+                "name": "Pacote de arrombador",
+                "quantity": 1
+              }
+            ],
+            "gold_gp": 8
+          },
+          {
+            "id": "B",
+            "items": [],
+            "gold_gp": 100
+          }
+        ],
+        "level_1_feature_entries": [
+          {
+            "id": "expertise",
+            "name": "Expertise"
+          },
+          {
+            "id": "sneak_attack",
+            "name": "Sneak Attack"
+          },
+          {
+            "id": "thieves_cant",
+            "name": "Thieves’ Cant"
+          },
+          {
+            "id": "weapon_mastery",
+            "name": "Weapon Mastery"
+          }
+        ]
+      }
+    },
+    {
+      "id": "sorcerer",
+      "label_pt_br": "Feiticeiro",
+      "source_name": "Sorcerer",
+      "source_location": "Player’s Handbook 2024, Capítulo 3, ‘Sorcerer’: ‘Core Sorcerer Traits’, ‘Level 1: Spellcasting’ e ‘Level 1: Innate Sorcery’, pp. 138–139 (paginação impressa).",
+      "runtime": {
+        "hit_die": 6,
+        "fixed_hp_per_level": 4,
+        "primary_abilities": [
+          "charisma"
+        ],
+        "saving_throw_proficiencies": [
+          "constitution",
+          "charisma"
+        ],
+        "skill_proficiencies": {
+          "count": 2,
+          "options": [
+            "arcana",
+            "deception",
+            "insight",
+            "intimidation",
+            "persuasion",
+            "religion"
+          ]
+        },
+        "weapon_proficiencies": [
+          "simple"
+        ],
+        "armor_proficiencies": [],
+        "features_by_level": {
+          "1": [
+            "spellcasting",
+            "innate_sorcery"
+          ]
+        },
+        "resources_by_level": {},
+        "attacks_by_level": {
+          "1": 1
+        },
+        "max_supported_level": 1,
+        "source_location": "Player’s Handbook 2024, Capítulo 3, ‘Sorcerer’: ‘Core Sorcerer Traits’, ‘Level 1: Spellcasting’ e ‘Level 1: Innate Sorcery’, pp. 138–139 (paginação impressa).",
+        "starting_equipment": [
+          {
+            "id": "A",
+            "items": [
+              {
+                "name": "Lança",
+                "quantity": 1
+              },
+              {
+                "name": "2 adagas",
+                "quantity": 1
+              },
+              {
+                "name": "Foco Arcano (cristal)",
+                "quantity": 1
+              },
+              {
+                "name": "Pacote de explorador de masmorras",
+                "quantity": 1
+              }
+            ],
+            "gold_gp": 28
+          },
+          {
+            "id": "B",
+            "items": [],
+            "gold_gp": 50
+          }
+        ],
+        "level_1_feature_entries": [
+          {
+            "id": "spellcasting",
+            "name": "Spellcasting"
+          },
+          {
+            "id": "innate_sorcery",
+            "name": "Innate Sorcery"
+          }
+        ]
+      }
+    },
+    {
+      "id": "warlock",
+      "label_pt_br": "Bruxo",
+      "source_name": "Warlock",
+      "source_location": "Player’s Handbook 2024, Chapter 3: Character Classes — ‘Core Warlock Traits’ (p. 152); ‘Warlock Features’ table and ‘Level 1: Eldritch Invocations’ / ‘Level 1: Pact Magic’ (p. 153).",
+      "runtime": {
+        "hit_die": 8,
+        "fixed_hp_per_level": 5,
+        "primary_abilities": [
+          "charisma"
+        ],
+        "saving_throw_proficiencies": [
+          "wisdom",
+          "charisma"
+        ],
+        "skill_proficiencies": {
+          "count": 2,
+          "options": [
+            "arcana",
+            "deception",
+            "history",
+            "intimidation",
+            "investigation",
+            "nature",
+            "religion"
+          ]
+        },
+        "weapon_proficiencies": [
+          "simple"
+        ],
+        "armor_proficiencies": [
+          "light"
+        ],
+        "features_by_level": {
+          "1": [
+            "value"
+          ]
+        },
+        "resources_by_level": {},
+        "attacks_by_level": {
+          "1": 1
+        },
+        "max_supported_level": 1,
+        "source_location": "Player’s Handbook 2024, Chapter 3: Character Classes — ‘Core Warlock Traits’ (p. 152); ‘Warlock Features’ table and ‘Level 1: Eldritch Invocations’ / ‘Level 1: Pact Magic’ (p. 153).",
+        "starting_equipment": [
+          {
+            "id": "A",
+            "items": [
+              {
+                "name": "Armadura de couro",
+                "quantity": 1
+              },
+              {
+                "name": "Foice",
+                "quantity": 1
+              },
+              {
+                "name": "2 adagas",
+                "quantity": 1
+              },
+              {
+                "name": "Foco arcano (orbe)",
+                "quantity": 1
+              },
+              {
+                "name": "Livro (conhecimento oculto)",
+                "quantity": 1
+              },
+              {
+                "name": "Kit de estudioso",
+                "quantity": 1
+              }
+            ],
+            "gold_gp": 15
+          },
+          {
+            "id": "B",
+            "items": [],
+            "gold_gp": 100
+          }
+        ],
+        "level_1_feature_entries": [
+          {
+            "id": "value",
+            "name": "value"
+          }
+        ]
+      }
+    },
+    {
+      "id": "wizard",
+      "label_pt_br": "Mago",
+      "source_name": "Wizard",
+      "source_location": "Player’s Handbook 2024, cap. 3, ‘Wizard’ e ‘Wizard Features’, pp. 164–166; ‘Wizard Spell List’, p. 168. Traços e equipamento: tabela ‘Core Wizard Traits’, p. 165; características de nível 1: pp. 165–166.",
+      "runtime": {
+        "hit_die": 6,
+        "fixed_hp_per_level": 4,
+        "primary_abilities": [
+          "intelligence"
+        ],
+        "saving_throw_proficiencies": [
+          "intelligence",
+          "wisdom"
+        ],
+        "skill_proficiencies": {
+          "count": 2,
+          "options": [
+            "arcana",
+            "history",
+            "insight",
+            "investigation",
+            "medicine",
+            "nature",
+            "religion"
+          ]
+        },
+        "weapon_proficiencies": [
+          "simple"
+        ],
+        "armor_proficiencies": [],
+        "features_by_level": {
+          "1": [
+            "conjuracao_spellcasting",
+            "adepto_ritualista_ritual_adept",
+            "recuperacao_arcana_arcane_recovery"
+          ]
+        },
+        "resources_by_level": {},
+        "attacks_by_level": {
+          "1": 1
+        },
+        "max_supported_level": 1,
+        "source_location": "Player’s Handbook 2024, cap. 3, ‘Wizard’ e ‘Wizard Features’, pp. 164–166; ‘Wizard Spell List’, p. 168. Traços e equipamento: tabela ‘Core Wizard Traits’, p. 165; características de nível 1: pp. 165–166.",
+        "starting_equipment": [
+          {
+            "id": "A",
+            "items": [
+              {
+                "name": "2 adagas",
+                "quantity": 1
+              },
+              {
+                "name": "Foco Arcano (bordão)",
+                "quantity": 1
+              },
+              {
+                "name": "Robe",
+                "quantity": 1
+              },
+              {
+                "name": "Grimório",
+                "quantity": 1
+              },
+              {
+                "name": "Pacote de Estudioso",
+                "quantity": 1
+              }
+            ],
+            "gold_gp": 5
+          },
+          {
+            "id": "B",
+            "items": [],
+            "gold_gp": 55
+          }
+        ],
+        "level_1_feature_entries": [
+          {
+            "id": "conjuracao_spellcasting",
+            "name": "Conjuração (Spellcasting)"
+          },
+          {
+            "id": "adepto_ritualista_ritual_adept",
+            "name": "Adepto Ritualista (Ritual Adept)"
+          },
+          {
+            "id": "recuperacao_arcana_arcane_recovery",
+            "name": "Recuperação Arcana (Arcane Recovery)"
+          }
+        ]
+      }
+    }
+  ],
+  "species": [
+    {
+      "id": "aasimar",
+      "label_pt_br": "Aasimar",
+      "source_name": "Aasimar",
+      "source_location": "Player’s Handbook 2024, capítulo 4, seção “Aasimar” / “Aasimar Traits”, p. 186 (página confirmada pelo sumário); regra de idiomas: capítulo 2, “Choose Languages”, p. 37."
+    },
+    {
+      "id": "dragonborn",
+      "label_pt_br": "Draconato",
+      "source_name": "Dragonborn",
+      "source_location": "Player’s Handbook 2024 fornecido (player_handbook_2024_source): capítulo 4, “Dragonborn”, “Dragonborn Traits” e tabela “Draconic Ancestors”, p. 187; capítulo 2, “Choose Languages”, p. 37."
+    },
+    {
+      "id": "dwarf",
+      "label_pt_br": "Anão",
+      "source_name": "Dwarf",
+      "source_location": "Player’s Handbook 2024, capítulo 4, “Species Descriptions” → “Dwarf”, p. 188; capítulo 2, “Creating a Character” → “Choose Languages”, p. 37."
+    },
+    {
+      "id": "elf",
+      "label_pt_br": "Elfo",
+      "source_name": "Elf",
+      "source_location": "Player’s Handbook 2024, Capítulo 4: Character Origins, “Elf Traits” e tabela “Elven Lineages”, p. 189; regra geral de idiomas em Capítulo 2: Creating a Character, “Choose Languages”, p. 37."
+    },
+    {
+      "id": "gnome",
+      "label_pt_br": "Gnomo",
+      "source_name": "Gnome",
+      "source_location": "Player’s Handbook 2024, capítulo 4, “Gnome” / “Gnome Traits”, p. 191; capítulo 2, “Choose Languages” e tabela “Standard Languages”, p. 37."
+    },
+    {
+      "id": "goliath",
+      "label_pt_br": "Golias",
+      "source_name": "Goliath",
+      "source_location": "Player's Handbook 2024, capitulo 4, secao Goliath/Goliath Traits, p. 192; capitulo 2, secao Choose Languages, pp. 36-37."
+    },
+    {
+      "id": "halfling",
+      "label_pt_br": "Halfling",
+      "source_name": "Halfling",
+      "source_location": "Player’s Handbook 2024, Chapter 4, “Halfling” / “Halfling Traits,” p. 193; idioma: Chapter 2, “Choose Languages,” p. 37."
+    },
+    {
+      "id": "human",
+      "label_pt_br": "Humano",
+      "source_name": "Human",
+      "source_location": "Player’s Handbook 2024, Capítulo 4: Character Origins, seção Human / Human Traits, p. 194; para idiomas, Capítulo 2: Creating a Character, seção Choose Languages, p. 37."
+    },
+    {
+      "id": "orc",
+      "label_pt_br": "Orc",
+      "source_name": "Orc",
+      "source_location": "Player’s Handbook 2024, Chapter 4, “Orc” / “Orc Traits,” p. 195; Chapter 2, “Step 2: Determine Origin” / “Choose Languages,” pp. 36–37."
+    },
+    {
+      "id": "tiefling",
+      "label_pt_br": "Tiefling",
+      "source_name": "Tiefling",
+      "source_location": "Player’s Handbook 2024, Chapter 4: Character Origins, seção “Tiefling” / “Tiefling Traits”, p. 196; regra geral de idiomas: Chapter 2: Creating a Character, “Choose Languages”, pp. 36–37."
+    }
+  ],
+  "backgrounds": [
+    {
+      "id": "acolyte",
+      "label_pt_br": "Acólito",
+      "source_name": "Acolyte",
+      "source_location": "Player’s Handbook 2024, Capítulo 4: Character Origins — Origin Components, p. 177; Background Descriptions: Acolyte, p. 178.",
+      "eligible_abilities": [
+        "intelligence",
+        "wisdom",
+        "charisma"
+      ],
+      "skill_proficiencies": [
+        "insight",
+        "religion"
+      ],
+      "origin_feat": "Magic Initiate (Cleric)",
+      "origin_feat_id": "magic_initiate_cleric",
+      "origin_feat_label_pt_br": "Iniciado em Magia (Clérigo)",
+      "tool_proficiencies": [
+        "Calligrapher’s Supplies"
+      ],
+      "equipment_packages": [
+        {
+          "id": "A",
+          "items": [
+            {
+              "name": "Calligrapher’s Supplies",
+              "quantity": 1
+            },
+            {
+              "name": "Book (prayers)",
+              "quantity": 1
+            },
+            {
+              "name": "Holy Symbol",
+              "quantity": 1
+            },
+            {
+              "name": "Parchment (10 sheets)",
+              "quantity": 1
+            },
+            {
+              "name": "Robe",
+              "quantity": 1
+            }
+          ],
+          "gold_gp": 8
+        },
+        {
+          "id": "B",
+          "items": [],
+          "gold_gp": 50
+        }
+      ]
+    },
+    {
+      "id": "artisan",
+      "label_pt_br": "Artesão",
+      "source_name": "Artisan",
+      "source_location": "Player’s Handbook 2024, Capítulo 4: Character Origins, “Parts of a Background”, p. 177; “Background Descriptions—Artisan”, p. 178.",
+      "eligible_abilities": [
+        "strength",
+        "dexterity",
+        "intelligence"
+      ],
+      "skill_proficiencies": [
+        "investigation",
+        "persuasion"
+      ],
+      "origin_feat": "Crafter",
+      "origin_feat_id": "crafter",
+      "origin_feat_label_pt_br": "Artesão",
+      "tool_proficiencies": [
+        "Um tipo de Artisan’s Tools, escolhido pelo personagem (ver capítulo 6)."
+      ],
+      "equipment_packages": [
+        {
+          "id": "A",
+          "items": [
+            {
+              "name": "Artisan’s Tools do tipo escolhido acima",
+              "quantity": 1
+            },
+            {
+              "name": "2 Pouches",
+              "quantity": 1
+            },
+            {
+              "name": "Traveler’s Clothes",
+              "quantity": 1
+            }
+          ],
+          "gold_gp": 32
+        },
+        {
+          "id": "B",
+          "items": [],
+          "gold_gp": 50
+        }
+      ]
+    },
+    {
+      "id": "charlatan",
+      "label_pt_br": "Charlatão",
+      "source_name": "Charlatan",
+      "source_location": "Player’s Handbook 2024, Capítulo 4: Character Origins — “Parts of a Background”, p. 177; “Background Descriptions: Charlatan”, p. 179 (páginas impressas).",
+      "eligible_abilities": [
+        "dexterity",
+        "constitution",
+        "charisma"
+      ],
+      "skill_proficiencies": [
+        "deception",
+        "sleight_of_hand"
+      ],
+      "origin_feat": "Skilled",
+      "origin_feat_id": "skilled",
+      "origin_feat_label_pt_br": "Perito",
+      "tool_proficiencies": [
+        "Forgery Kit (kit de falsificação)"
+      ],
+      "equipment_packages": [
+        {
+          "id": "A",
+          "items": [
+            {
+              "name": "Forgery Kit (kit de falsificação)",
+              "quantity": 1
+            },
+            {
+              "name": "Costume (traje/disfarce)",
+              "quantity": 1
+            },
+            {
+              "name": "Fine Clothes (roupas finas)",
+              "quantity": 1
+            }
+          ],
+          "gold_gp": 0
+        },
+        {
+          "id": "B",
+          "items": [],
+          "gold_gp": 0
+        }
+      ]
+    },
+    {
+      "id": "criminal",
+      "label_pt_br": "Criminoso",
+      "source_name": "Criminal",
+      "source_location": "Player’s Handbook (2024), capítulo 4, “Character Origins”: “Parts of a Background”, p. 177 (regra geral de aumentos); “Background Descriptions”, p. 179 (Criminal). Índice: entrada Criminal, p. 179.",
+      "eligible_abilities": [
+        "dexterity",
+        "constitution",
+        "intelligence"
+      ],
+      "skill_proficiencies": [
+        "sleight_of_hand",
+        "stealth"
+      ],
+      "origin_feat": "Alert",
+      "origin_feat_id": "alert",
+      "origin_feat_label_pt_br": "Alerta",
+      "tool_proficiencies": [
+        "Thieves’ Tools"
+      ],
+      "equipment_packages": [
+        {
+          "id": "A",
+          "items": [
+            {
+              "name": "2 Daggers",
+              "quantity": 1
+            },
+            {
+              "name": "Thieves’ Tools",
+              "quantity": 1
+            },
+            {
+              "name": "Crowbar",
+              "quantity": 1
+            },
+            {
+              "name": "2 Pouches",
+              "quantity": 1
+            },
+            {
+              "name": "Traveler’s Clothes",
+              "quantity": 1
+            }
+          ],
+          "gold_gp": 16
+        },
+        {
+          "id": "B",
+          "items": [],
+          "gold_gp": 50
+        }
+      ]
+    },
+    {
+      "id": "entertainer",
+      "label_pt_br": "Artista",
+      "source_name": "Entertainer",
+      "source_location": "Player’s Handbook 2024, Chapter 4: Character Origins, “Origin Components” p. 177 and “Background Descriptions—Entertainer” p. 180; associated Origin Feat “Musician,” Chapter 5: Feats, p. 201.",
+      "eligible_abilities": [
+        "strength",
+        "dexterity",
+        "charisma"
+      ],
+      "skill_proficiencies": [
+        "acrobatics",
+        "performance"
+      ],
+      "origin_feat": "Musician",
+      "origin_feat_id": "musician",
+      "origin_feat_label_pt_br": "Músico",
+      "tool_proficiencies": [
+        "Proficiência em um tipo de instrumento musical à escolha.",
+        "Proficiência em três instrumentos musicais à escolha."
+      ],
+      "equipment_packages": [
+        {
+          "id": "A",
+          "items": [
+            {
+              "name": "um instrumento musical (do mesmo tipo escolhido para a proficiência)",
+              "quantity": 1
+            },
+            {
+              "name": "2 fantasias",
+              "quantity": 1
+            },
+            {
+              "name": "espelho",
+              "quantity": 1
+            },
+            {
+              "name": "perfume",
+              "quantity": 1
+            },
+            {
+              "name": "roupas de viajante",
+              "quantity": 1
+            }
+          ],
+          "gold_gp": 11
+        },
+        {
+          "id": "B",
+          "items": [],
+          "gold_gp": 50
+        }
+      ]
+    },
+    {
+      "id": "farmer",
+      "label_pt_br": "Fazendeiro",
+      "source_name": "Farmer",
+      "source_location": "Player’s Handbook 2024, cap. 4, “Background Descriptions” > “Farmer”, p. 180; regras gerais de componentes de origem, p. 177; ajustes de atributos por background, cap. 2, p. 38.",
+      "eligible_abilities": [
+        "strength",
+        "constitution",
+        "wisdom"
+      ],
+      "skill_proficiencies": [
+        "animal_handling",
+        "nature"
+      ],
+      "origin_feat": "Tough",
+      "origin_feat_id": "tough",
+      "origin_feat_label_pt_br": "Robusto",
+      "tool_proficiencies": [
+        "Ferramentas de carpinteiro"
+      ],
+      "equipment_packages": [
+        {
+          "id": "A",
+          "items": [
+            {
+              "name": "Foice",
+              "quantity": 1
+            },
+            {
+              "name": "Ferramentas de carpinteiro",
+              "quantity": 1
+            },
+            {
+              "name": "Kit de curandeiro",
+              "quantity": 1
+            },
+            {
+              "name": "Panela de ferro",
+              "quantity": 1
+            },
+            {
+              "name": "Pá",
+              "quantity": 1
+            },
+            {
+              "name": "Roupas de viajante",
+              "quantity": 1
+            }
+          ],
+          "gold_gp": 30
+        },
+        {
+          "id": "B",
+          "items": [],
+          "gold_gp": 50
+        }
+      ]
+    },
+    {
+      "id": "guard",
+      "label_pt_br": "Guarda",
+      "source_name": "Guard",
+      "source_location": "Player’s Handbook 2024, Chapter 4: Character Origins — Parts of a Background, p. 177; Background Descriptions — Guard, p. 181.",
+      "eligible_abilities": [
+        "strength",
+        "intelligence",
+        "wisdom"
+      ],
+      "skill_proficiencies": [
+        "athletics",
+        "perception"
+      ],
+      "origin_feat": "Alert",
+      "origin_feat_id": "alert",
+      "origin_feat_label_pt_br": "Alerta",
+      "tool_proficiencies": [
+        "one kind of Gaming Set"
+      ],
+      "equipment_packages": [
+        {
+          "id": "A",
+          "items": [
+            {
+              "name": "Spear",
+              "quantity": 1
+            },
+            {
+              "name": "Light Crossbow",
+              "quantity": 1
+            },
+            {
+              "name": "20 Bolts",
+              "quantity": 1
+            },
+            {
+              "name": "one Gaming Set (the same kind chosen for tool proficiency)",
+              "quantity": 1
+            },
+            {
+              "name": "Hooded Lantern",
+              "quantity": 1
+            },
+            {
+              "name": "Manacles",
+              "quantity": 1
+            },
+            {
+              "name": "Quiver",
+              "quantity": 1
+            },
+            {
+              "name": "Traveler’s Clothes",
+              "quantity": 1
+            }
+          ],
+          "gold_gp": 12
+        },
+        {
+          "id": "B",
+          "items": [],
+          "gold_gp": 50
+        }
+      ]
+    },
+    {
+      "id": "guide",
+      "label_pt_br": "Guia",
+      "source_name": "Guide",
+      "source_location": "Player’s Handbook 2024, Capítulo 4: Character Origins — Parts of a Background / Origin Components, p. 177; Background Descriptions — Guide, p. 181 (página impressa, confirmada pelo sumário).",
+      "eligible_abilities": [
+        "dexterity",
+        "constitution",
+        "wisdom"
+      ],
+      "skill_proficiencies": [
+        "stealth",
+        "survival"
+      ],
+      "origin_feat": "Magic Initiate (Druid)",
+      "origin_feat_id": "magic_initiate_druid",
+      "origin_feat_label_pt_br": "Iniciado em Magia (Druida)",
+      "tool_proficiencies": [
+        "Cartographer's Tools"
+      ],
+      "equipment_packages": [
+        {
+          "id": "A",
+          "items": [
+            {
+              "name": "Shortbow",
+              "quantity": 1
+            },
+            {
+              "name": "Arrows",
+              "quantity": 20
+            },
+            {
+              "name": "Cartographer's Tools",
+              "quantity": 1
+            },
+            {
+              "name": "Bedroll",
+              "quantity": 1
+            },
+            {
+              "name": "Quiver",
+              "quantity": 1
+            },
+            {
+              "name": "Tent",
+              "quantity": 1
+            },
+            {
+              "name": "Traveler's Clothes",
+              "quantity": 1
+            },
+            {
+              "name": "GP",
+              "quantity": 3
+            }
+          ],
+          "gold_gp": 0
+        },
+        {
+          "id": "B",
+          "items": [],
+          "gold_gp": 0
+        }
+      ]
+    },
+    {
+      "id": "hermit",
+      "label_pt_br": "Eremita",
+      "source_name": "Hermit",
+      "source_location": "Player’s Handbook 2024, capítulo 4, seção ‘Origin Components’, p. 177; seção ‘Background Descriptions’, entrada ‘Hermit’, p. 182.",
+      "eligible_abilities": [
+        "constitution",
+        "wisdom",
+        "charisma"
+      ],
+      "skill_proficiencies": [
+        "medicine",
+        "religion"
+      ],
+      "origin_feat": "Healer",
+      "origin_feat_id": "healer",
+      "origin_feat_label_pt_br": "Curandeiro",
+      "tool_proficiencies": [
+        "Herbalism Kit"
+      ],
+      "equipment_packages": [
+        {
+          "id": "A",
+          "items": [
+            {
+              "name": "Quarterstaff",
+              "quantity": 1
+            },
+            {
+              "name": "Herbalism Kit",
+              "quantity": 1
+            },
+            {
+              "name": "Bedroll",
+              "quantity": 1
+            },
+            {
+              "name": "Book (philosophy)",
+              "quantity": 1
+            },
+            {
+              "name": "Lamp",
+              "quantity": 1
+            },
+            {
+              "name": "Oil",
+              "quantity": 3
+            },
+            {
+              "name": "Traveler’s Clothes",
+              "quantity": 1
+            }
+          ],
+          "gold_gp": 16
+        },
+        {
+          "id": "B",
+          "items": [],
+          "gold_gp": 50
+        }
+      ]
+    },
+    {
+      "id": "merchant",
+      "label_pt_br": "Comerciante",
+      "source_name": "Merchant",
+      "source_location": "Player’s Handbook 2024, Capítulo 4, “Character Origins”: “Parts of a Background” (p. 177) e “Background Descriptions—Merchant” (p. 182); Capítulo 5, “Origin Feats” (p. 200).",
+      "eligible_abilities": [
+        "constitution",
+        "intelligence",
+        "charisma"
+      ],
+      "skill_proficiencies": [
+        "animal_handling",
+        "persuasion"
+      ],
+      "origin_feat": "Lucky",
+      "origin_feat_id": "lucky",
+      "origin_feat_label_pt_br": "Sortudo",
+      "tool_proficiencies": [
+        "Navigator’s Tools"
+      ],
+      "equipment_packages": [
+        {
+          "id": "A",
+          "items": [
+            {
+              "name": "Navigator’s Tools",
+              "quantity": 1
+            },
+            {
+              "name": "2 Pouches",
+              "quantity": 1
+            },
+            {
+              "name": "Traveler’s Clothes",
+              "quantity": 1
+            }
+          ],
+          "gold_gp": 22
+        },
+        {
+          "id": "B",
+          "items": [],
+          "gold_gp": 50
+        }
+      ]
+    },
+    {
+      "id": "noble",
+      "label_pt_br": "Nobre",
+      "source_name": "Noble",
+      "source_location": "Player’s Handbook 2024, Chapter 4: Character Origins — “Parts of a Background” (p. 177) e “Noble” (p. 183, conforme índice); Chapter 6: Equipment — “Gaming Set” (p. 220).",
+      "eligible_abilities": [
+        "strength",
+        "intelligence",
+        "charisma"
+      ],
+      "skill_proficiencies": [
+        "history",
+        "persuasion"
+      ],
+      "origin_feat": "Skilled",
+      "origin_feat_id": "skilled",
+      "origin_feat_label_pt_br": "Perito",
+      "tool_proficiencies": [
+        "Gaming Set",
+        "Dice",
+        "Dragonchess",
+        "Playing Cards",
+        "Three-Dragon Ante"
+      ],
+      "equipment_packages": [
+        {
+          "id": "A",
+          "items": [
+            {
+              "name": "Gaming Set (mesmo tipo escolhido para proficiência)",
+              "quantity": 1
+            },
+            {
+              "name": "Fine Clothes",
+              "quantity": 1
+            },
+            {
+              "name": "Perfume",
+              "quantity": 1
+            }
+          ],
+          "gold_gp": 29
+        },
+        {
+          "id": "B",
+          "items": [],
+          "gold_gp": 50
+        }
+      ]
+    },
+    {
+      "id": "sage",
+      "label_pt_br": "Sábio",
+      "source_name": "Sage",
+      "source_location": "Player’s Handbook 2024, capítulo 4, “Character Origins”: “Parts of a Background”, p. 177 (regras gerais); entrada identificada como Sage no sumário, p. 183. O bloco correspondente está entre Noble e Sailor no texto extraído.",
+      "eligible_abilities": [
+        "intelligence",
+        "wisdom",
+        "charisma"
+      ],
+      "skill_proficiencies": [
+        "arcana",
+        "history"
+      ],
+      "origin_feat": "Magic Initiate (Wizard)",
+      "origin_feat_id": "magic_initiate_wizard",
+      "origin_feat_label_pt_br": "Iniciado em Magia (Mago)",
+      "tool_proficiencies": [
+        "Calligrapher’s Supplies"
+      ],
+      "equipment_packages": [
+        {
+          "id": "A",
+          "items": [
+            {
+              "name": "Quarterstaff",
+              "quantity": 1
+            },
+            {
+              "name": "Calligrapher’s Supplies",
+              "quantity": 1
+            },
+            {
+              "name": "Book (history)",
+              "quantity": 1
+            },
+            {
+              "name": "Parchment (8 sheets)",
+              "quantity": 1
+            },
+            {
+              "name": "Robe",
+              "quantity": 1
+            }
+          ],
+          "gold_gp": 8
+        },
+        {
+          "id": "B",
+          "items": [],
+          "gold_gp": 50
+        }
+      ]
+    },
+    {
+      "id": "sailor",
+      "label_pt_br": "Marinheiro",
+      "source_name": "Sailor",
+      "source_location": "Player’s Handbook 2024, cap. 4, “Origin Components”, p. 177; “Sailor”, p. 184 (páginas impressas).",
+      "eligible_abilities": [
+        "strength",
+        "dexterity",
+        "wisdom"
+      ],
+      "skill_proficiencies": [
+        "acrobatics",
+        "perception"
+      ],
+      "origin_feat": "Tavern Brawler",
+      "origin_feat_id": "tavern_brawler",
+      "origin_feat_label_pt_br": "Brigão de Taverna",
+      "tool_proficiencies": [
+        "Navigator’s Tools"
+      ],
+      "equipment_packages": [
+        {
+          "id": "A",
+          "items": [
+            {
+              "name": "Dagger",
+              "quantity": 1
+            },
+            {
+              "name": "Navigator’s Tools",
+              "quantity": 1
+            },
+            {
+              "name": "Rope",
+              "quantity": 1
+            },
+            {
+              "name": "Traveler’s Clothes",
+              "quantity": 1
+            }
+          ],
+          "gold_gp": 20
+        },
+        {
+          "id": "B",
+          "items": [],
+          "gold_gp": 50
+        }
+      ]
+    },
+    {
+      "id": "scribe",
+      "label_pt_br": "Escriba",
+      "source_name": "Scribe",
+      "source_location": "Player’s Handbook 2024, capítulo 4, “Character Origins”: “Origin Components”, p. 177; “Background Descriptions” / Scribe, p. 184 (página confirmada pelo índice).",
+      "eligible_abilities": [
+        "dexterity",
+        "intelligence",
+        "wisdom"
+      ],
+      "skill_proficiencies": [
+        "investigation",
+        "perception"
+      ],
+      "origin_feat": "Skilled",
+      "origin_feat_id": "skilled",
+      "origin_feat_label_pt_br": "Perito",
+      "tool_proficiencies": [
+        "Suprimentos de caligrafia"
+      ],
+      "equipment_packages": [
+        {
+          "id": "A",
+          "items": [
+            {
+              "name": "Suprimentos de caligrafia",
+              "quantity": 1
+            },
+            {
+              "name": "Roupas finas",
+              "quantity": 1
+            },
+            {
+              "name": "Lampião",
+              "quantity": 1
+            },
+            {
+              "name": "Óleo (3 frascos)",
+              "quantity": 1
+            },
+            {
+              "name": "Pergaminho (12 folhas)",
+              "quantity": 1
+            }
+          ],
+          "gold_gp": 23
+        },
+        {
+          "id": "B",
+          "items": [],
+          "gold_gp": 50
+        }
+      ]
+    },
+    {
+      "id": "soldier",
+      "label_pt_br": "Soldado",
+      "source_name": "Soldier",
+      "source_location": "Player’s Handbook 2024, Capítulo 4, “Character Origins”: “Parts of a Background” (p. 177) e “Background Descriptions”, entrada “Soldier” (p. 185).",
+      "eligible_abilities": [
+        "strength",
+        "dexterity",
+        "constitution"
+      ],
+      "skill_proficiencies": [
+        "athletics",
+        "intimidation"
+      ],
+      "origin_feat": "Savage Attacker",
+      "origin_feat_id": "savage_attacker",
+      "origin_feat_label_pt_br": "Atacante Selvagem",
+      "tool_proficiencies": [
+        "Escolha um tipo de conjunto de jogos (Gaming Set); capítulo 6"
+      ],
+      "equipment_packages": [
+        {
+          "id": "A",
+          "items": [
+            {
+              "name": "Spear",
+              "quantity": 1
+            },
+            {
+              "name": "Shortbow",
+              "quantity": 1
+            },
+            {
+              "name": "Arrows",
+              "quantity": 20
+            },
+            {
+              "name": "Gaming Set",
+              "quantity": 1
+            },
+            {
+              "name": "Healer’s Kit",
+              "quantity": 1
+            },
+            {
+              "name": "Quiver",
+              "quantity": 1
+            },
+            {
+              "name": "Traveler’s Clothes",
+              "quantity": 1
+            }
+          ],
+          "gold_gp": 14
+        },
+        {
+          "id": "B",
+          "items": [],
+          "gold_gp": 50
+        }
+      ]
+    },
+    {
+      "id": "wayfarer",
+      "label_pt_br": "Viajante",
+      "source_name": "Wayfarer",
+      "source_location": "Player’s Handbook 2024, Chapter 4: Character Origins — ‘Parts of a Background’ p. 177; ‘Background Descriptions’ — Wayfarer, p. 185 (página indicada no sumário).",
+      "eligible_abilities": [
+        "dexterity",
+        "wisdom",
+        "charisma"
+      ],
+      "skill_proficiencies": [
+        "insight",
+        "stealth"
+      ],
+      "origin_feat": "Lucky",
+      "origin_feat_id": "lucky",
+      "origin_feat_label_pt_br": "Sortudo",
+      "tool_proficiencies": [
+        "Thieves’ Tools"
+      ],
+      "equipment_packages": [
+        {
+          "id": "A",
+          "items": [
+            {
+              "name": "2 Daggers",
+              "quantity": 1
+            },
+            {
+              "name": "Thieves’ Tools",
+              "quantity": 1
+            },
+            {
+              "name": "Gaming Set (any)",
+              "quantity": 1
+            },
+            {
+              "name": "Bedroll",
+              "quantity": 1
+            },
+            {
+              "name": "2 Pouches",
+              "quantity": 1
+            },
+            {
+              "name": "Traveler’s Clothes",
+              "quantity": 1
+            }
+          ],
+          "gold_gp": 16
+        },
+        {
+          "id": "B",
+          "items": [],
+          "gold_gp": 50
+        }
+      ]
+    }
+  ],
+  "standard_array_by_class": {
+    "barbarian": {
+      "strength": 15,
+      "dexterity": 13,
+      "constitution": 14,
+      "intelligence": 10,
+      "wisdom": 12,
+      "charisma": 8
+    },
+    "bard": {
+      "strength": 8,
+      "dexterity": 14,
+      "constitution": 12,
+      "intelligence": 13,
+      "wisdom": 10,
+      "charisma": 15
+    },
+    "cleric": {
+      "strength": 14,
+      "dexterity": 8,
+      "constitution": 13,
+      "intelligence": 10,
+      "wisdom": 15,
+      "charisma": 12
+    },
+    "druid": {
+      "strength": 8,
+      "dexterity": 12,
+      "constitution": 14,
+      "intelligence": 13,
+      "wisdom": 15,
+      "charisma": 10
+    },
+    "fighter": {
+      "strength": 15,
+      "dexterity": 14,
+      "constitution": 13,
+      "intelligence": 8,
+      "wisdom": 10,
+      "charisma": 12
+    },
+    "monk": {
+      "strength": 12,
+      "dexterity": 15,
+      "constitution": 13,
+      "intelligence": 10,
+      "wisdom": 14,
+      "charisma": 8
+    },
+    "paladin": {
+      "strength": 15,
+      "dexterity": 10,
+      "constitution": 13,
+      "intelligence": 8,
+      "wisdom": 12,
+      "charisma": 14
+    },
+    "ranger": {
+      "strength": 12,
+      "dexterity": 15,
+      "constitution": 13,
+      "intelligence": 8,
+      "wisdom": 14,
+      "charisma": 10
+    },
+    "rogue": {
+      "strength": 12,
+      "dexterity": 15,
+      "constitution": 13,
+      "intelligence": 14,
+      "wisdom": 10,
+      "charisma": 8
+    },
+    "sorcerer": {
+      "strength": 10,
+      "dexterity": 13,
+      "constitution": 14,
+      "intelligence": 8,
+      "wisdom": 12,
+      "charisma": 15
+    },
+    "warlock": {
+      "strength": 8,
+      "dexterity": 14,
+      "constitution": 13,
+      "intelligence": 12,
+      "wisdom": 10,
+      "charisma": 15
+    },
+    "wizard": {
+      "strength": 8,
+      "dexterity": 12,
+      "constitution": 13,
+      "intelligence": 15,
+      "wisdom": 14,
+      "charisma": 10
+    }
+  },
+  "ability_score_methods": {
+    "point_cost": {
+      "budget": 27,
+      "costs_by_score": {
+        "10": 2,
+        "11": 3,
+        "12": 4,
+        "13": 5,
+        "14": 7,
+        "15": 9,
+        "8": 0,
+        "9": 1
+      },
+      "example": {
+        "cost": 7,
+        "score": 14
+      },
+      "verification_source": "Roll20 Free Basic Rules (2024): https://roll20.net/compendium/dnd5e/Rules:Step%203%20-%20Ability%20Scores?expansion=33335"
+    }
+  },
+  "language_rules": {
+    "required": [
+      "common"
+    ],
+    "additional_choice_count": 2,
+    "additional_options": [
+      {
+        "id": "common_sign_language",
+        "label": "Common Sign Language"
+      },
+      {
+        "id": "draconic",
+        "label": "Draconic"
+      },
+      {
+        "id": "dwarvish",
+        "label": "Dwarvish"
+      },
+      {
+        "id": "elvish",
+        "label": "Elvish"
+      },
+      {
+        "id": "giant",
+        "label": "Giant"
+      },
+      {
+        "id": "gnomish",
+        "label": "Gnomish"
+      },
+      {
+        "id": "goblin",
+        "label": "Goblin"
+      },
+      {
+        "id": "halfling",
+        "label": "Halfling"
+      },
+      {
+        "id": "orc",
+        "label": "Orc"
+      }
+    ],
+    "selection_source": "PHB 2024, Chapter 2, Choose Languages, p. 37"
+  }
+}
