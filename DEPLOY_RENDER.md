@@ -74,7 +74,7 @@ Configure os valores não sensíveis e o secret diretamente no Render:
 
 ```text
 NARRATOR_PROVIDER=gemini
-GEMINI_MODEL=gemini-flash-latest
+GEMINI_MODEL=gemini-3.8-flash
 GEMINI_TIMEOUT_SECONDS=30
 GEMINI_MAX_OUTPUT_TOKENS=512
 GEMINI_TEMPERATURE=0.7

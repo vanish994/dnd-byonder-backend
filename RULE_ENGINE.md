@@ -35,7 +35,7 @@ A integração com o provider de narração é separada do Rule Engine. O provid
 ```text
 NARRATOR_PROVIDER=gemini
 GEMINI_API_KEY=<secret do Google Gemini>
-GEMINI_MODEL=gemini-flash-latest
+GEMINI_MODEL=gemini-3.8-flash
 GEMINI_TIMEOUT_SECONDS=30
 GEMINI_MAX_OUTPUT_TOKENS=512
 GEMINI_TEMPERATURE=0.7

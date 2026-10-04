@@ -33,7 +33,7 @@ MIMO_MODEL = os.getenv('MIMO_MODEL', 'mimo-v2.6-flash').strip()
 MIMO_API_KEY = os.getenv('MIMO_API_KEY', '').strip()
 NARRATOR_PROVIDER = os.getenv('NARRATOR_PROVIDER', 'gemini').strip().lower()
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '').strip()
-GEMINI_MODEL = os.getenv('GEMINI_MODEL', 'gemini-flash-latest').strip()
+GEMINI_MODEL = os.getenv('GEMINI_MODEL', 'gemini-3.8-flash').strip()
 app = FastAPI(title='D&D 2024 Rule Knowledge API', version='0.1.0')
 
 ABILITY_CHECK_RULE_ID = 'ability_check.mvp.v1'

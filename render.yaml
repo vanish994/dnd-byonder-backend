@@ -10,7 +10,7 @@ services:
       - key: NARRATOR_PROVIDER
         value: gemini
       - key: GEMINI_MODEL
-        value: gemini-flash-latest
+        value: gemini-3.8-flash
       - key: GEMINI_TIMEOUT_SECONDS
         value: "30"
       - key: GEMINI_MAX_OUTPUT_TOKENS
