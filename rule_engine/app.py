@@ -43,6 +43,7 @@ app = FastAPI(title='D&D 2024 Rule Knowledge API', version='0.1.0')
 
 ABILITY_CHECK_RULE_ID = 'ability_check.mvp.v1'
 SAVING_THROW_RULE_ID = 'saving_throw.mvp.v1'
+ATTACK_ROLL_RULE_ID = 'attack_roll.mvp.v1'
 RULE_RESOLUTION_SCHEMA_VERSION = 'rule-resolution-v1'
 TextAction = constr(strict=True, min_length=1, max_length=200)
 
@@ -74,8 +75,17 @@ class SavingThrowAction(BaseModel):
         extra = 'forbid'
 
 
+class AttackAction(BaseModel):
+    type: Literal['attack']
+    attack_bonus: StrictInt
+    target_ac: StrictInt
+
+    class Config:
+        extra = 'forbid'
+
+
 class ResolveRequest(BaseModel):
-    action: TextAction | AbilityCheckAction | SavingThrowAction
+    action: TextAction | AbilityCheckAction | SavingThrowAction | AttackAction
     state: dict[str, Any] = Field(default_factory=dict)
     rule_ids: list[str] = Field(default_factory=list)
 
@@ -298,6 +308,8 @@ def resolve_request(
         return resolve_explicit_action(body, randbelow=randbelow)
     if isinstance(body.action, SavingThrowAction):
         return resolve_saving_throw(body, randbelow=randbelow)
+    if isinstance(body.action, AttackAction):
+        return resolve_attack(body, randbelow=randbelow)
 
     # Text-only and unsupported actions remain fail-closed; KB candidates are evidence, not executable rules.
     return {
@@ -361,4 +373,31 @@ def resolve_saving_throw(
         'rolls': [{'type': 'd20', 'result': d20_result}],
         'outcome': {'total': total, 'success': total >= action.dc},
         'rules_used': [SAVING_THROW_RULE_ID],
+    }
+
+
+def resolve_attack(
+    body: ResolveRequest,
+    *,
+    randbelow: Callable[[int], int] | None = None,
+):
+    """Resolve the supported attack-roll MVP without critical rules."""
+    action = body.action
+    if not isinstance(action, AttackAction):
+        raise TypeError('resolve_attack requires a validated attack action')
+    roll = roll_dice('d20', randbelow=randbelow)
+    d20_result = roll['rolls'][0]
+    total = d20_result + action.attack_bonus
+    return {
+        'schema_version': RULE_RESOLUTION_SCHEMA_VERSION,
+        'resolution_id': str(uuid.uuid4()),
+        'status': 'resolved',
+        'action': {'type': action.type},
+        'check': {
+            'attack_bonus': action.attack_bonus,
+            'target_ac': action.target_ac,
+        },
+        'rolls': [{'type': 'd20', 'result': d20_result}],
+        'outcome': {'total': total, 'hit': total >= action.target_ac},
+        'rules_used': [ATTACK_ROLL_RULE_ID],
     }

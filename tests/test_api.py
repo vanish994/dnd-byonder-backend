@@ -121,6 +121,16 @@ class RuleEngineApiTests(unittest.TestCase):
         )
 
     @staticmethod
+    def attack(*, attack_bonus=5, target_ac=15):
+        return api.ResolveRequest(
+            action={
+                "type": "attack",
+                "attack_bonus": attack_bonus,
+                "target_ac": target_ac,
+            }
+        )
+
+    @staticmethod
     def randbelow_for(d20_result):
         return lambda upper_bound: d20_result - 1
 
@@ -217,6 +227,58 @@ class RuleEngineApiTests(unittest.TestCase):
         self.assertEqual(result["rolls"], [{"type": "d20", "result": 1}])
         self.assertEqual(result["outcome"], {"total": 1, "success": True})
 
+    def test_attack_roll_hits(self):
+        result = api.resolve_request(
+            self.attack(), randbelow=self.randbelow_for(14)
+        )
+
+        self.assertEqual(result["outcome"], {"total": 19, "hit": True})
+
+    def test_attack_roll_misses(self):
+        result = api.resolve_request(
+            self.attack(), randbelow=self.randbelow_for(7)
+        )
+
+        self.assertEqual(result["outcome"], {"total": 12, "hit": False})
+
+    def test_attack_roll_hits_at_exact_target_ac(self):
+        result = api.resolve_request(
+            self.attack(), randbelow=self.randbelow_for(10)
+        )
+
+        self.assertEqual(result["outcome"], {"total": 15, "hit": True})
+
+    def test_attack_roll_natural_1_has_no_critical_failure(self):
+        result = api.resolve_attack(
+            self.attack(attack_bonus=5, target_ac=15),
+            randbelow=self.randbelow_for(1),
+        )
+
+        self.assertEqual(result["rolls"], [{"type": "d20", "result": 1}])
+        self.assertEqual(result["outcome"], {"total": 6, "hit": False})
+        self.assertNotIn("critical_failure", result)
+
+    def test_attack_roll_natural_20_has_no_critical_hit(self):
+        result = api.resolve_attack(
+            self.attack(attack_bonus=5, target_ac=30),
+            randbelow=self.randbelow_for(20),
+        )
+
+        self.assertEqual(result["rolls"], [{"type": "d20", "result": 20}])
+        self.assertEqual(result["outcome"], {"total": 25, "hit": False})
+        self.assertNotIn("critical_hit", result)
+
+    def test_attack_roll_contract_and_rule_id(self):
+        result = api.resolve_request(
+            self.attack(), randbelow=self.randbelow_for(14)
+        )
+
+        self.assertEqual(result["schema_version"], "rule-resolution-v1")
+        self.assertEqual(result["status"], "resolved")
+        self.assertEqual(result["action"], {"type": "attack"})
+        self.assertEqual(result["check"], {"attack_bonus": 5, "target_ac": 15})
+        self.assertEqual(result["rules_used"], ["attack_roll.mvp.v1"])
+
     def test_ability_check_rng_is_injected_and_repeatable(self):
         body = self.ability_check()
         first = api.resolve_explicit_action(body, randbelow=self.randbelow_for(20))
@@ -236,6 +298,10 @@ class RuleEngineApiTests(unittest.TestCase):
             {"type": "saving_throw", "ability": "strength", "modifier": 2},
             {"type": "saving_throw", "ability": "dexterity", "dc": 12},
             {"type": "saving_throw", "ability": "athletics", "dc": 12, "modifier": 2},
+            {"type": "attack", "target_ac": 15},
+            {"type": "attack", "attack_bonus": 5},
+            {"type": "attack", "attack_bonus": "5", "target_ac": 15},
+            {"type": "attack", "attack_bonus": 5, "target_ac": 15, "critical": True},
             {"type": "ability_check", "ability": "athletics", "dc": 12, "modifier": 2},
             {"type": "ability_check", "ability": "strength", "dc": 0, "modifier": 2},
             {"type": "ability_check", "ability": "strength", "dc": "12", "modifier": 2},
