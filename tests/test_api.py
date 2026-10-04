@@ -121,18 +121,26 @@ class RuleEngineApiTests(unittest.TestCase):
         )
 
     @staticmethod
-    def attack(*, attack_bonus=5, target_ac=15):
+    def attack(*, attack_bonus=5, target_ac=15, damage=None):
+        action = {
+            "type": "attack",
+            "attack_bonus": attack_bonus,
+            "target_ac": target_ac,
+        }
+        if damage is not None:
+            action["damage"] = damage
         return api.ResolveRequest(
-            action={
-                "type": "attack",
-                "attack_bonus": attack_bonus,
-                "target_ac": target_ac,
-            }
+            action=action
         )
 
     @staticmethod
     def randbelow_for(d20_result):
         return lambda upper_bound: d20_result - 1
+
+    @staticmethod
+    def randbelow_sequence(*results):
+        values = iter(results)
+        return lambda upper_bound: next(values) - 1
 
     def test_explicit_ability_check_resolves_success_with_expected_contract(self):
         body = self.ability_check(dc=15, modifier=3)
@@ -234,7 +242,13 @@ class RuleEngineApiTests(unittest.TestCase):
 
         self.assertEqual(
             result["outcome"],
-            {"total": 19, "hit": True, "critical": False, "natural_1": False},
+            {
+                "total": 19,
+                "hit": True,
+                "critical": False,
+                "natural_1": False,
+                "damage": None,
+            },
         )
 
     def test_attack_roll_misses(self):
@@ -244,7 +258,13 @@ class RuleEngineApiTests(unittest.TestCase):
 
         self.assertEqual(
             result["outcome"],
-            {"total": 12, "hit": False, "critical": False, "natural_1": False},
+            {
+                "total": 12,
+                "hit": False,
+                "critical": False,
+                "natural_1": False,
+                "damage": None,
+            },
         )
 
     def test_attack_roll_hits_at_exact_target_ac(self):
@@ -254,7 +274,13 @@ class RuleEngineApiTests(unittest.TestCase):
 
         self.assertEqual(
             result["outcome"],
-            {"total": 15, "hit": True, "critical": False, "natural_1": False},
+            {
+                "total": 15,
+                "hit": True,
+                "critical": False,
+                "natural_1": False,
+                "damage": None,
+            },
         )
 
     def test_attack_roll_natural_1_is_automatic_miss_with_large_bonus(self):
@@ -266,7 +292,13 @@ class RuleEngineApiTests(unittest.TestCase):
         self.assertEqual(result["rolls"], [{"type": "d20", "result": 1}])
         self.assertEqual(
             result["outcome"],
-            {"total": 21, "hit": False, "critical": False, "natural_1": True},
+            {
+                "total": 21,
+                "hit": False,
+                "critical": False,
+                "natural_1": True,
+                "damage": None,
+            },
         )
         self.assertNotIn("damage", result)
 
@@ -279,9 +311,103 @@ class RuleEngineApiTests(unittest.TestCase):
         self.assertEqual(result["rolls"], [{"type": "d20", "result": 20}])
         self.assertEqual(
             result["outcome"],
-            {"total": 15, "hit": True, "critical": True, "natural_1": False},
+            {
+                "total": 15,
+                "hit": True,
+                "critical": True,
+                "natural_1": False,
+                "damage": None,
+            },
         )
         self.assertNotIn("damage", result)
+
+    def test_attack_hit_rolls_damage_and_uses_damage_rule(self):
+        result = api.resolve_request(
+            self.attack(damage={"dice": "1d8", "modifier": 3}),
+            randbelow=self.randbelow_sequence(14, 6),
+        )
+
+        self.assertEqual(
+            result["check"],
+            {
+                "attack_bonus": 5,
+                "target_ac": 15,
+                "damage": {"dice": "1d8", "modifier": 3},
+            },
+        )
+        self.assertEqual(
+            result["rolls"],
+            [{"type": "d20", "result": 14}, {"type": "d8", "result": 6}],
+        )
+        self.assertEqual(
+            result["outcome"],
+            {
+                "total": 19,
+                "hit": True,
+                "critical": False,
+                "natural_1": False,
+                "damage": 9,
+            },
+        )
+        self.assertEqual(
+            result["rules_used"], ["attack_roll.mvp.v1", "attack_damage.mvp.v1"]
+        )
+
+    def test_attack_miss_does_not_roll_damage(self):
+        calls = []
+
+        def randbelow(upper_bound):
+            calls.append(upper_bound)
+            return 7
+
+        result = api.resolve_request(
+            self.attack(damage={"dice": "1d8", "modifier": 3}),
+            randbelow=randbelow,
+        )
+
+        self.assertEqual(calls, [20])
+        self.assertEqual(result["rolls"], [{"type": "d20", "result": 8}])
+        self.assertEqual(result["outcome"]["damage"], None)
+        self.assertEqual(result["rules_used"], ["attack_roll.mvp.v1"])
+
+    def test_attack_natural_1_does_not_roll_damage(self):
+        calls = []
+
+        def randbelow(upper_bound):
+            calls.append(upper_bound)
+            return 0
+
+        result = api.resolve_request(
+            self.attack(attack_bonus=20, target_ac=5, damage={"dice": "1d8", "modifier": 3}),
+            randbelow=randbelow,
+        )
+
+        self.assertEqual(calls, [20])
+        self.assertEqual(result["outcome"]["total"], 21)
+        self.assertEqual(result["outcome"]["hit"], False)
+        self.assertEqual(result["outcome"]["natural_1"], True)
+        self.assertEqual(result["outcome"]["damage"], None)
+
+    def test_attack_natural_20_rolls_single_damage_die_without_doubling(self):
+        result = api.resolve_request(
+            self.attack(attack_bonus=-5, target_ac=30, damage={"dice": "1d8", "modifier": 3}),
+            randbelow=self.randbelow_sequence(20, 4),
+        )
+
+        self.assertEqual(result["outcome"]["total"], 15)
+        self.assertEqual(result["outcome"]["hit"], True)
+        self.assertEqual(result["outcome"]["critical"], True)
+        self.assertEqual(result["outcome"]["natural_1"], False)
+        self.assertEqual(result["outcome"]["damage"], 7)
+        self.assertEqual(len(result["rolls"]), 2)
+
+    def test_attack_damage_supports_negative_modifier(self):
+        result = api.resolve_request(
+            self.attack(damage={"dice": "1d8", "modifier": -1}),
+            randbelow=self.randbelow_sequence(14, 2),
+        )
+
+        self.assertEqual(result["outcome"]["damage"], 1)
 
     def test_attack_roll_natural_flags_are_mutually_exclusive(self):
         for d20_result in (1, 20):

@@ -44,6 +44,7 @@ app = FastAPI(title='D&D 2024 Rule Knowledge API', version='0.1.0')
 ABILITY_CHECK_RULE_ID = 'ability_check.mvp.v1'
 SAVING_THROW_RULE_ID = 'saving_throw.mvp.v1'
 ATTACK_ROLL_RULE_ID = 'attack_roll.mvp.v1'
+ATTACK_DAMAGE_RULE_ID = 'attack_damage.mvp.v1'
 RULE_RESOLUTION_SCHEMA_VERSION = 'rule-resolution-v1'
 TextAction = constr(strict=True, min_length=1, max_length=200)
 
@@ -75,10 +76,19 @@ class SavingThrowAction(BaseModel):
         extra = 'forbid'
 
 
+class AttackDamage(BaseModel):
+    dice: Literal['1d8']
+    modifier: StrictInt = Field(ge=-MAX_MODIFIER, le=MAX_MODIFIER)
+
+    class Config:
+        extra = 'forbid'
+
+
 class AttackAction(BaseModel):
     type: Literal['attack']
     attack_bonus: StrictInt
     target_ac: StrictInt
+    damage: AttackDamage | None = None
 
     class Config:
         extra = 'forbid'
@@ -391,21 +401,36 @@ def resolve_attack(
     critical = d20_result == 20
     natural_1 = d20_result == 1
     hit = True if critical else False if natural_1 else total >= action.target_ac
+    damage_result = None
+    rolls = [{'type': 'd20', 'result': d20_result}]
+    rules_used = [ATTACK_ROLL_RULE_ID]
+    if hit and action.damage is not None:
+        damage_roll = roll_dice(action.damage.dice, randbelow=randbelow)
+        damage_result = damage_roll['rolls'][0] + action.damage.modifier
+        rolls.append({'type': 'd8', 'result': damage_roll['rolls'][0]})
+        rules_used.append(ATTACK_DAMAGE_RULE_ID)
+    check = {
+        'attack_bonus': action.attack_bonus,
+        'target_ac': action.target_ac,
+    }
+    if action.damage is not None:
+        check['damage'] = {
+            'dice': action.damage.dice,
+            'modifier': action.damage.modifier,
+        }
     return {
         'schema_version': RULE_RESOLUTION_SCHEMA_VERSION,
         'resolution_id': str(uuid.uuid4()),
         'status': 'resolved',
         'action': {'type': action.type},
-        'check': {
-            'attack_bonus': action.attack_bonus,
-            'target_ac': action.target_ac,
-        },
-        'rolls': [{'type': 'd20', 'result': d20_result}],
+        'check': check,
+        'rolls': rolls,
         'outcome': {
             'total': total,
             'hit': hit,
             'critical': critical,
             'natural_1': natural_1,
+            'damage': damage_result,
         },
-        'rules_used': [ATTACK_ROLL_RULE_ID],
+        'rules_used': rules_used,
     }
