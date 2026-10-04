@@ -126,7 +126,7 @@ class SavingThrowAction(BaseModel):
 
 class AttackDamage(BaseModel):
     dice: Literal['1d8']
-    modifier: StrictInt = Field(ge=-MAX_MODIFIER, le=MAX_MODIFIER)
+    modifier: StrictInt = Field(ge=0, le=MAX_MODIFIER)
 
     class Config:
         extra = 'forbid'
@@ -598,6 +598,24 @@ def _validate_initiative_state(combat: dict[str, Any]) -> None:
     if not isinstance(combatants, dict) or not combatants:
         raise ValueError('combatants cannot be empty')
 
+    for actor_id, actor in combatants.items():
+        if not isinstance(actor, dict):
+            raise ValueError(f'invalid combatant: {actor_id}')
+        hp = actor.get('hp')
+        max_hp = actor.get('max_hp')
+        if (
+            not isinstance(hp, int)
+            or isinstance(hp, bool)
+            or not isinstance(max_hp, int)
+            or isinstance(max_hp, bool)
+            or hp < 0
+            or max_hp <= 0
+            or hp > max_hp
+        ):
+            raise ValueError('invalid combatant hp')
+        if actor.get('unconscious') != (hp == 0):
+            raise ValueError('unconscious state is inconsistent with hp')
+
     order = combat.get('turn_order')
     if not isinstance(order, list) or not order:
         raise ValueError('initiative order cannot be empty')
@@ -719,6 +737,8 @@ def _require_current_actor(combat: dict[str, Any], actor_id: str) -> dict[str, A
 
 
 def _require_bonus_action(combat: dict[str, Any], actor_id: str) -> dict[str, Any]:
+    if not combat.get('active'):
+        raise ValueError('combat is not active')
     actor = _require_current_actor(combat, actor_id)
     if actor.get('unconscious'):
         raise ValueError('unconscious actor cannot use bonus action')
@@ -732,6 +752,8 @@ def _consume_bonus_action(actor: dict[str, Any]) -> None:
 
 
 def _require_reaction(combat: dict[str, Any], actor_id: str) -> dict[str, Any]:
+    if not combat.get('active'):
+        raise ValueError('combat is not active')
     actor = _require_current_actor(combat, actor_id)
     if actor.get('unconscious'):
         raise ValueError('unconscious actor cannot use reaction')
@@ -875,8 +897,8 @@ def resolve_start_combat(
             resolved_initiative_modifier = spec.initiative_modifier
         if resolved_hp is None or resolved_max_hp is None or resolved_ac is None or resolved_initiative_modifier is None:
             raise ValueError('combatant requires a character or complete legacy combat statistics')
-        if resolved_hp > resolved_max_hp:
-            raise ValueError('hp cannot exceed max_hp')
+        if resolved_hp < 0 or resolved_hp > resolved_max_hp:
+            raise ValueError('hp must be between zero and max_hp')
         roll = roll_dice('d20', randbelow=randbelow)
         d20_result = roll['rolls'][0]
         initiative_total = d20_result + resolved_initiative_modifier
@@ -1071,6 +1093,20 @@ def resolve_end_turn(body: ResolveRequest) -> dict[str, Any]:
     combat = _require_combat(body.state)
     _require_current_actor(combat, action.actor_id)
     actor = combat["combatants"][action.actor_id]
+
+    _finish_combat_if_needed(combat)
+    if not combat['active']:
+        combat['available_actions'] = []
+        return _combat_resolution(
+            {'type': 'end_turn', 'actor_id': action.actor_id},
+            check={}, rolls=[],
+            outcome={
+                'combat_active': False,
+                'combat_ended': True,
+                'lifecycle_events': ['turn_end'],
+                'expired_conditions': [],
+            },
+        )
 
     expired_conditions = advance_condition_durations(
         actor,

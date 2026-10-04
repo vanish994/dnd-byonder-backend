@@ -401,13 +401,9 @@ class RuleEngineApiTests(unittest.TestCase):
         self.assertEqual(result["outcome"]["damage"], 7)
         self.assertEqual(len(result["rolls"]), 2)
 
-    def test_attack_damage_supports_negative_modifier(self):
-        result = api.resolve_request(
-            self.attack(damage={"dice": "1d8", "modifier": -1}),
-            randbelow=self.randbelow_sequence(14, 2),
-        )
-
-        self.assertEqual(result["outcome"]["damage"], 1)
+    def test_attack_damage_rejects_negative_modifier(self):
+        with self.assertRaises(ValueError):
+            self.attack(damage={"dice": "1d8", "modifier": -1})
 
     def test_attack_roll_natural_flags_are_mutually_exclusive(self):
         for d20_result in (1, 20):

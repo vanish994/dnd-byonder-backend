@@ -440,6 +440,7 @@ class CombatVerticalSliceTests(unittest.TestCase):
         state = {}
         self.start(state)
         for actor in state["combat"]["combatants"].values():
+            actor["hp"] = 0
             actor["unconscious"] = True
 
         result = self.apply(state, {"type": "end_turn", "actor_id": "player"})
@@ -457,6 +458,33 @@ class CombatVerticalSliceTests(unittest.TestCase):
         self.assertEqual(state["combat"]["combatants"]["goblin-1"]["hp"], 0)
         self.assertFalse(state["combat"]["active"])
         self.assertEqual(state["combat"]["winner_side"], "player")
+
+    def test_negative_damage_is_rejected_before_combat_resolution(self):
+        state = {}
+        self.start(state)
+        before = repr(state)
+
+        with self.assertRaises(ValueError):
+            self.apply(
+                state,
+                {
+                    "type": "attack",
+                    "actor_id": "player",
+                    "target_id": "goblin-1",
+                    "attack_bonus": 5,
+                    "damage": {"dice": "1d8", "modifier": -1},
+                },
+            )
+
+        self.assertEqual(repr(state), before)
+
+    def test_hp_zero_requires_consistent_unconscious_state(self):
+        state = {}
+        self.start(state)
+        state["combat"]["combatants"]["player"]["hp"] = 0
+
+        with self.assertRaisesRegex(ValueError, "unconscious state"):
+            api._combat_available_actions(state["combat"])
 
     def test_damage_above_zero_keeps_target_conscious(self):
         state = {}
@@ -501,7 +529,7 @@ class CombatVerticalSliceTests(unittest.TestCase):
         )
         self.assertTrue(state["combat"]["active"])
 
-    def test_current_actor_becoming_unconscious_advances_to_next_eligible_actor(self):
+    def test_current_actor_becoming_unconscious_closes_defeat_before_advancing(self):
         state = {}
         self.start(state)
         player = state["combat"]["combatants"]["player"]
@@ -510,8 +538,9 @@ class CombatVerticalSliceTests(unittest.TestCase):
 
         result = self.apply(state, {"type": "end_turn", "actor_id": "player"})
 
-        self.assertEqual(state["combat"]["current_actor_id"], "goblin-1")
-        self.assertEqual(result["outcome"]["current_actor_id"], "goblin-1")
+        self.assertFalse(state["combat"]["active"])
+        self.assertEqual(state["combat"]["winner_side"], "enemy")
+        self.assertTrue(result["outcome"]["combat_ended"])
 
     def test_unconscious_actor_has_only_end_turn_available(self):
         state = {}
@@ -519,6 +548,7 @@ class CombatVerticalSliceTests(unittest.TestCase):
         combat = state["combat"]
         combat["current_actor_id"] = "player"
         combat["turn_index"] = 0
+        combat["combatants"]["player"]["hp"] = 0
         combat["combatants"]["player"]["unconscious"] = True
 
         self.assertEqual(api._combat_available_actions(combat), [{"type": "end_turn"}])
@@ -568,6 +598,34 @@ class CombatVerticalSliceTests(unittest.TestCase):
                     "damage": {"dice": "1d8", "modifier": 3},
                 },
             )
+
+    def test_post_combat_bonus_and_reaction_are_rejected_without_consuming(self):
+        state = {}
+        self.start(state, combatants=self.combatants(goblin_hp=1))
+        self.attack(state, d20=20, d8=8)
+        player = state["combat"]["combatants"]["player"]
+
+        with self.assertRaisesRegex(ValueError, "combat is not active"):
+            api._require_bonus_action(state["combat"], "player")
+        with self.assertRaisesRegex(ValueError, "combat is not active"):
+            api._require_reaction(state["combat"], "player")
+        self.assertTrue(player["bonus_action_available"])
+        self.assertTrue(player["reaction_available"])
+
+    def test_end_turn_closes_combat_when_defeat_is_already_present(self):
+        state = {}
+        self.start(state)
+        player = state["combat"]["combatants"]["player"]
+        player["hp"] = 0
+        player["unconscious"] = True
+
+        result = self.apply(state, {"type": "end_turn", "actor_id": "player"})
+
+        self.assertFalse(state["combat"]["active"])
+        self.assertEqual(state["combat"]["winner_side"], "enemy")
+        self.assertEqual(state["combat"]["available_actions"], [])
+        self.assertFalse(result["outcome"]["combat_active"])
+        self.assertTrue(result["outcome"]["combat_ended"])
 
     def test_unconscious_actor_cannot_move_or_attack(self):
         combatants = self.combatants(player_hp=0)
@@ -1091,6 +1149,7 @@ class CombatVerticalSliceTests(unittest.TestCase):
         state = {}
         self.start(state)
         player = state["combat"]["combatants"]["player"]
+        player["hp"] = 0
         player["unconscious"] = True
 
         with self.assertRaisesRegex(ValueError, "unconscious"):
@@ -1118,6 +1177,7 @@ class CombatVerticalSliceTests(unittest.TestCase):
         state = {}
         self.start(state)
         player = state["combat"]["combatants"]["player"]
+        player["hp"] = 0
         player["unconscious"] = True
 
         with self.assertRaisesRegex(ValueError, "unconscious"):
