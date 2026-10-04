@@ -52,13 +52,18 @@ class GameOrchestrator:
             if resolution.get("status") not in {"resolved", "needs_rule_validation"}:
                 raise RuleResolutionError("Rule Engine returned an unsupported resolution status")
 
+        combat = state.get("combat")
+        if isinstance(combat, dict) and "available_actions" in combat:
+            available_actions = deepcopy(combat["available_actions"])
+        else:
+            available_actions = deepcopy(request.available_actions)
         try:
             narration = self.narrator.narrate(
                 campaign_id=request.campaign_id,
                 state=state,
                 player_input=request.player_input,
                 rule_resolution=resolution,
-                available_actions=deepcopy(request.available_actions),
+                available_actions=available_actions,
                 request_id=request_id,
             )
         except NarratorError:
@@ -75,5 +80,5 @@ class GameOrchestrator:
             narration_status=narration_status,
             rule_resolution=resolution,
             state=state,
-            available_actions=deepcopy(request.available_actions),
+            available_actions=available_actions,
         )

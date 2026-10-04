@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from fastapi import FastAPI, Header, HTTPException, Query
-from pydantic import BaseModel, Field, StrictInt, ValidationError, constr
+from pydantic import BaseModel, Field, StrictInt, StrictStr, ValidationError, constr, model_validator
 
 from game.contracts import GameTurnRequest, GameTurnResponse
 from game.orchestrator import (
@@ -45,6 +45,8 @@ ABILITY_CHECK_RULE_ID = 'ability_check.mvp.v1'
 SAVING_THROW_RULE_ID = 'saving_throw.mvp.v1'
 ATTACK_ROLL_RULE_ID = 'attack_roll.mvp.v1'
 ATTACK_DAMAGE_RULE_ID = 'attack_damage.mvp.v1'
+INITIATIVE_RULE_ID = 'initiative.mvp.v1'
+COMBAT_RULE_ID = 'combat.mvp.v1'
 RULE_RESOLUTION_SCHEMA_VERSION = 'rule-resolution-v1'
 TextAction = constr(strict=True, min_length=1, max_length=200)
 
@@ -87,15 +89,67 @@ class AttackDamage(BaseModel):
 class AttackAction(BaseModel):
     type: Literal['attack']
     attack_bonus: StrictInt
-    target_ac: StrictInt
+    target_ac: StrictInt | None = None
+    actor_id: StrictStr | None = None
+    target_id: StrictStr | None = None
     damage: AttackDamage | None = None
+
+    @model_validator(mode='after')
+    def validate_attack_target(self):
+        combat_fields = (self.actor_id is not None, self.target_id is not None)
+        if combat_fields[0] != combat_fields[1]:
+            raise ValueError('actor_id and target_id must be provided together')
+        if self.actor_id is None and self.target_ac is None:
+            raise ValueError('target_ac is required outside combat')
+        if self.actor_id is not None and self.target_ac is not None:
+            raise ValueError('target_ac must come from combat state')
+        return self
+
+    class Config:
+        extra = 'forbid'
+
+
+class CombatantSpec(BaseModel):
+    id: StrictStr = Field(min_length=1, max_length=64)
+    hp: StrictInt = Field(ge=0)
+    max_hp: StrictInt = Field(gt=0)
+    ac: StrictInt = Field(ge=0)
+    initiative_modifier: StrictInt = Field(ge=-MAX_MODIFIER, le=MAX_MODIFIER)
+    position: StrictInt = Field(ge=0)
+    movement_speed: StrictInt = Field(ge=0, le=MAX_MODIFIER)
+    side: StrictStr = Field(default='neutral', min_length=1, max_length=64)
+
+    class Config:
+        extra = 'forbid'
+
+
+class StartCombatAction(BaseModel):
+    type: Literal['start_combat']
+    combatants: list[CombatantSpec] = Field(min_length=2)
+
+    class Config:
+        extra = 'forbid'
+
+
+class MoveAction(BaseModel):
+    type: Literal['move']
+    actor_id: StrictStr = Field(min_length=1, max_length=64)
+    distance: StrictInt = Field(ge=0)
+
+    class Config:
+        extra = 'forbid'
+
+
+class EndTurnAction(BaseModel):
+    type: Literal['end_turn']
+    actor_id: StrictStr = Field(min_length=1, max_length=64)
 
     class Config:
         extra = 'forbid'
 
 
 class ResolveRequest(BaseModel):
-    action: TextAction | AbilityCheckAction | SavingThrowAction | AttackAction
+    action: TextAction | AbilityCheckAction | SavingThrowAction | AttackAction | StartCombatAction | MoveAction | EndTurnAction
     state: dict[str, Any] = Field(default_factory=dict)
     rule_ids: list[str] = Field(default_factory=list)
 
@@ -214,7 +268,10 @@ def resolve_game_action(action: dict[str, Any], state: dict[str, Any]) -> dict[s
         body = ResolveRequest(action=action, state=state)
     except ValidationError as exc:
         raise ValueError('invalid structured action') from exc
-    return resolve_request(body)
+    resolution = resolve_request(body)
+    state.clear()
+    state.update(body.state)
+    return resolution
 
 
 def build_game_orchestrator() -> GameOrchestrator:
@@ -309,16 +366,285 @@ def game_turn(
         ) from exc
 
 
+def _combat_available_actions(combat: dict[str, Any]) -> list[dict[str, str]]:
+    if not combat.get('active'):
+        return []
+    actor = combat.get('combatants', {}).get(combat.get('current_actor_id'))
+    if not actor or actor.get('unconscious'):
+        return [{'type': 'end_turn'}]
+    actions: list[dict[str, str]] = []
+    if actor.get('movement_remaining', 0) > 0:
+        actions.append({'type': 'move'})
+    if actor.get('action_available'):
+        actions.append({'type': 'attack'})
+    actions.append({'type': 'end_turn'})
+    return actions
+
+
+def _combat_resolution(
+    action: dict[str, Any],
+    *,
+    check: dict[str, Any],
+    rolls: list[dict[str, Any]],
+    outcome: dict[str, Any],
+    rules_used: list[str] | None = None,
+) -> dict[str, Any]:
+    return {
+        'schema_version': RULE_RESOLUTION_SCHEMA_VERSION,
+        'resolution_id': str(uuid.uuid4()),
+        'status': 'resolved',
+        'action': action,
+        'check': check,
+        'rolls': rolls,
+        'outcome': outcome,
+        'rules_used': rules_used or [COMBAT_RULE_ID],
+    }
+
+
+def _require_combat(state: dict[str, Any]) -> dict[str, Any]:
+    combat = state.get('combat')
+    if not isinstance(combat, dict) or not combat.get('active'):
+        raise ValueError('combat is not active')
+    if not isinstance(combat.get('combatants'), dict):
+        raise ValueError('combatants are missing')
+    return combat
+
+
+def _require_current_actor(combat: dict[str, Any], actor_id: str) -> dict[str, Any]:
+    if actor_id != combat.get('current_actor_id'):
+        raise ValueError('actor is not the current actor')
+    actor = combat['combatants'].get(actor_id)
+    if not isinstance(actor, dict):
+        raise ValueError('actor does not exist')
+    return actor
+
+
+def _finish_combat_if_needed(combat: dict[str, Any]) -> None:
+    combatants = combat['combatants']
+    sides = {item.get('side', 'neutral') for item in combatants.values()}
+    defeated = [side for side in sides if not any(item.get('side') == side and item.get('hp', 0) > 0 for item in combatants.values())]
+    if len(sides) >= 2 and defeated:
+        winners = [side for side in sides if side not in defeated]
+        combat['active'] = False
+        combat['winner_side'] = winners[0] if len(winners) == 1 else None
+        combat['available_actions'] = []
+
+
+def resolve_start_combat(
+    body: ResolveRequest,
+    *,
+    randbelow: Callable[[int], int] | None = None,
+) -> dict[str, Any]:
+    action = body.action
+    if not isinstance(action, StartCombatAction):
+        raise TypeError('resolve_start_combat requires a validated action')
+    if body.state.get('combat', {}).get('active'):
+        raise ValueError('combat is already active')
+    combatants: dict[str, dict[str, Any]] = {}
+    rolls: list[dict[str, Any]] = []
+    initiative_rows: list[tuple[str, int, int]] = []
+    for spec in action.combatants:
+        if spec.id in combatants:
+            raise ValueError('combatant ids must be unique')
+        if spec.hp > spec.max_hp:
+            raise ValueError('hp cannot exceed max_hp')
+        roll = roll_dice('d20', randbelow=randbelow)
+        d20_result = roll['rolls'][0]
+        initiative_total = d20_result + spec.initiative_modifier
+        initiative_rows.append((spec.id, initiative_total, spec.initiative_modifier))
+        rolls.append({
+            'type': 'd20',
+            'purpose': 'initiative',
+            'actor_id': spec.id,
+            'result': d20_result,
+        })
+        combatants[spec.id] = {
+            'id': spec.id,
+            'hp': spec.hp,
+            'max_hp': spec.max_hp,
+            'ac': spec.ac,
+            'initiative': initiative_total,
+            'initiative_modifier': spec.initiative_modifier,
+            'position': spec.position,
+            'movement_speed': spec.movement_speed,
+            'unconscious': spec.hp == 0,
+            'side': spec.side,
+            'action_available': True,
+            'bonus_action_available': True,
+            'reaction_available': True,
+            'movement_remaining': spec.movement_speed,
+        }
+    order = [item[0] for item in sorted(initiative_rows, key=lambda row: (-row[1], -row[2], row[0]))]
+    combat = {
+        'active': True,
+        'round': 1,
+        'turn_index': 0,
+        'current_actor_id': order[0],
+        'turn_order': order,
+        'combatants': combatants,
+        'winner_side': None,
+    }
+    combat['available_actions'] = _combat_available_actions(combat)
+    body.state['combat'] = combat
+    return _combat_resolution(
+        {'type': 'start_combat'},
+        check={'combatant_ids': order},
+        rolls=rolls,
+        outcome={
+            'combat_started': True,
+            'round': 1,
+            'turn_index': 0,
+            'current_actor_id': order[0],
+            'turn_order': order,
+        },
+        rules_used=[INITIATIVE_RULE_ID, COMBAT_RULE_ID],
+    )
+
+
+def resolve_move(body: ResolveRequest) -> dict[str, Any]:
+    action = body.action
+    if not isinstance(action, MoveAction):
+        raise TypeError('resolve_move requires a validated action')
+    combat = _require_combat(body.state)
+    actor = _require_current_actor(combat, action.actor_id)
+    if actor.get('unconscious'):
+        raise ValueError('unconscious actor cannot move')
+    if action.distance > actor.get('movement_remaining', 0):
+        raise ValueError('movement exceeds remaining movement')
+    actor['position'] += action.distance
+    actor['movement_remaining'] -= action.distance
+    combat['available_actions'] = _combat_available_actions(combat)
+    return _combat_resolution(
+        {'type': 'move', 'actor_id': action.actor_id},
+        check={'distance': action.distance},
+        rolls=[],
+        outcome={
+            'distance': action.distance,
+            'position': actor['position'],
+            'movement_remaining': actor['movement_remaining'],
+        },
+    )
+
+
+def resolve_combat_attack(
+    body: ResolveRequest,
+    *,
+    randbelow: Callable[[int], int] | None = None,
+) -> dict[str, Any]:
+    action = body.action
+    if not isinstance(action, AttackAction) or action.actor_id is None or action.target_id is None:
+        raise TypeError('resolve_combat_attack requires a validated combat attack')
+    combat = _require_combat(body.state)
+    actor = _require_current_actor(combat, action.actor_id)
+    target = combat['combatants'].get(action.target_id)
+    if target is None:
+        raise ValueError('target does not exist')
+    if actor.get('unconscious'):
+        raise ValueError('unconscious actor cannot attack')
+    if target.get('unconscious'):
+        raise ValueError('unconscious target is invalid')
+    if not actor.get('action_available'):
+        raise ValueError('action is already consumed')
+    if action.damage is None:
+        raise ValueError('combat attack requires damage')
+    standalone_action = AttackAction(
+        type='attack',
+        attack_bonus=action.attack_bonus,
+        target_ac=target['ac'],
+        damage=action.damage,
+    )
+    resolution = resolve_attack(ResolveRequest(action=standalone_action), randbelow=randbelow)
+    actor['action_available'] = False
+    damage = resolution['outcome']['damage']
+    hp_before = target['hp']
+    if resolution['outcome']['hit'] and damage is not None:
+        target['hp'] = max(0, target['hp'] - damage)
+        target['unconscious'] = target['hp'] == 0
+    _finish_combat_if_needed(combat)
+    combat['available_actions'] = _combat_available_actions(combat)
+    resolution['action'] = {
+        'type': 'attack',
+        'actor_id': action.actor_id,
+        'target_id': action.target_id,
+    }
+    resolution['check']['target_ac'] = target['ac']
+    resolution['outcome'].update({
+        'target_hp_before': hp_before,
+        'target_hp_after': target['hp'],
+        'target_unconscious': target['unconscious'],
+        'combat_active': combat['active'],
+    })
+    return resolution
+
+
+def resolve_end_turn(body: ResolveRequest) -> dict[str, Any]:
+    action = body.action
+    if not isinstance(action, EndTurnAction):
+        raise TypeError('resolve_end_turn requires a validated action')
+    combat = _require_combat(body.state)
+    _require_current_actor(combat, action.actor_id)
+    order = combat['turn_order']
+    previous_index = combat['turn_index']
+    next_index = previous_index
+    wrapped = False
+    next_actor = None
+    for _ in range(len(order)):
+        next_index += 1
+        if next_index >= len(order):
+            next_index = 0
+            wrapped = True
+        candidate = combat['combatants'][order[next_index]]
+        if not candidate.get('unconscious'):
+            next_actor = candidate
+            break
+    if next_actor is None:
+        combat['active'] = False
+        combat['available_actions'] = []
+        return _combat_resolution(
+            {'type': 'end_turn', 'actor_id': action.actor_id},
+            check={}, rolls=[],
+            outcome={'combat_active': False, 'combat_ended': True},
+        )
+    if wrapped:
+        combat['round'] += 1
+    combat['turn_index'] = next_index
+    combat['current_actor_id'] = next_actor['id']
+    next_actor['action_available'] = True
+    next_actor['bonus_action_available'] = True
+    next_actor['reaction_available'] = True
+    next_actor['movement_remaining'] = next_actor['movement_speed']
+    combat['available_actions'] = _combat_available_actions(combat)
+    return _combat_resolution(
+        {'type': 'end_turn', 'actor_id': action.actor_id},
+        check={}, rolls=[],
+        outcome={
+            'combat_active': combat['active'],
+            'combat_ended': False,
+            'round': combat['round'],
+            'turn_index': next_index,
+            'current_actor_id': next_actor['id'],
+        },
+    )
+
+
 def resolve_request(
     body: ResolveRequest,
     *,
     randbelow: Callable[[int], int] | None = None,
 ):
+    if isinstance(body.action, StartCombatAction):
+        return resolve_start_combat(body, randbelow=randbelow)
+    if isinstance(body.action, MoveAction):
+        return resolve_move(body)
+    if isinstance(body.action, EndTurnAction):
+        return resolve_end_turn(body)
     if isinstance(body.action, AbilityCheckAction):
         return resolve_explicit_action(body, randbelow=randbelow)
     if isinstance(body.action, SavingThrowAction):
         return resolve_saving_throw(body, randbelow=randbelow)
     if isinstance(body.action, AttackAction):
+        if body.action.actor_id is not None:
+            return resolve_combat_attack(body, randbelow=randbelow)
         return resolve_attack(body, randbelow=randbelow)
 
     # Text-only and unsupported actions remain fail-closed; KB candidates are evidence, not executable rules.

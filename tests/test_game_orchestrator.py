@@ -129,6 +129,34 @@ class GameOrchestratorTests(unittest.TestCase):
                 self.assertEqual(response.rule_resolution["rolls"], [{"type": "d20", "result": 14}])
                 self.resolve_action.assert_called_once_with(request.action, {})
 
+    def test_combat_available_actions_are_derived_from_state(self):
+        resolution = self.resolve_action.return_value
+
+        def resolve_with_combat_state(action, state):
+            state["combat"] = {
+                "active": True,
+                "available_actions": [{"type": "end_turn"}],
+            }
+            return resolution
+
+        orchestrator = GameOrchestrator(
+            self.narrator,
+            resolve_action=resolve_with_combat_state,
+        )
+        response = orchestrator.turn(
+            GameTurnRequest(
+                player_input="Eu termino o turno.",
+                action={"type": "end_turn", "actor_id": "player"},
+                available_actions=[{"type": "attack"}],
+            )
+        )
+
+        self.assertEqual(response.available_actions, [{"type": "end_turn"}])
+        self.assertEqual(
+            self.narrator.narrate.call_args.kwargs["available_actions"],
+            [{"type": "end_turn"}],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
