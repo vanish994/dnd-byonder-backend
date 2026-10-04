@@ -29,6 +29,7 @@ from rule_engine.conditions import (
     advance_condition_durations,
     has_condition,
     has_disadvantage,
+    remove_condition,
 )
 from rule_engine.dice import MAX_MODIFIER, DiceExpressionError, roll_dice
 from rule_engine.character import (
@@ -569,7 +570,11 @@ def _combat_available_actions(combat: dict[str, Any]) -> list[dict[str, str]]:
     if not actor or actor.get('unconscious'):
         return [{'type': 'end_turn'}]
     actions: list[dict[str, str]] = []
-    if actor.get('movement_remaining', 0) > 0 and not has_condition(actor, 'grappled'):
+    movement_available = actor.get('movement_remaining', 0) > 0
+    if has_condition(actor, 'prone'):
+        stand_cost = actor.get('movement_speed', 0) // 2
+        movement_available = actor.get('movement_remaining', 0) >= stand_cost
+    if movement_available and not has_condition(actor, 'grappled'):
         actions.append({'type': 'move'})
     if actor.get('action_available'):
         actions.append({'type': 'attack'})
@@ -794,8 +799,19 @@ def resolve_move(body: ResolveRequest) -> dict[str, Any]:
         raise ValueError('unconscious actor cannot move')
     if action.distance > 0 and has_condition(actor, 'grappled'):
         raise ValueError('grappled actor cannot move')
+    prone = has_condition(actor, 'prone')
+    stand_cost = 0
+    if prone:
+        stand_cost = actor.get('movement_speed', 0) // 2
+        if actor.get('movement_remaining', 0) < stand_cost:
+            raise ValueError('not enough movement to stand from prone')
+        if action.distance > actor.get('movement_remaining', 0) - stand_cost:
+            raise ValueError('movement exceeds remaining movement after standing')
     if action.distance > actor.get('movement_remaining', 0):
         raise ValueError('movement exceeds remaining movement')
+    if prone:
+        remove_condition(actor, condition_id='prone')
+        actor['movement_remaining'] -= stand_cost
     actor['position'] += action.distance
     actor['movement_remaining'] -= action.distance
     combat['available_actions'] = _combat_available_actions(combat)

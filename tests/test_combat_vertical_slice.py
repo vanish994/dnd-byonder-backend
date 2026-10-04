@@ -348,6 +348,100 @@ class CombatVerticalSliceTests(unittest.TestCase):
         self.assertTrue(player["reaction_available"])
         self.assertEqual(player["movement_remaining"], 30)
 
+    def test_prone_movement_pays_half_speed_to_stand(self):
+        state = {}
+        self.start(state)
+        player = state["combat"]["combatants"]["player"]
+        player["conditions"] = [{"id": "prone"}]
+
+        self.assertIn(
+            {"type": "move"},
+            state["combat"]["available_actions"],
+        )
+        result = self.apply(
+            state,
+            {"type": "move", "actor_id": "player", "distance": 5},
+        )
+
+        self.assertEqual(player["conditions"], [])
+        self.assertEqual(result["outcome"]["movement_remaining"], 10)
+        self.assertEqual(player["movement_remaining"], 10)
+
+    def test_prone_cannot_stand_without_half_speed_available(self):
+        state = {}
+        self.start(state)
+        player = state["combat"]["combatants"]["player"]
+        player["conditions"] = [{"id": "prone"}]
+        player["movement_remaining"] = 10
+        state["combat"]["available_actions"] = api._combat_available_actions(state["combat"])
+
+        self.assertNotIn(
+            {"type": "move"},
+            state["combat"]["available_actions"],
+        )
+        with self.assertRaises(ValueError):
+            self.apply(
+                state,
+                {"type": "move", "actor_id": "player", "distance": 1},
+            )
+        self.assertEqual(
+            [condition["id"] for condition in player["conditions"]],
+            ["prone"],
+        )
+        self.assertEqual(player["movement_remaining"], 10)
+
+    def test_prone_state_is_consistent_on_next_turn(self):
+        state = {}
+        self.start(state)
+        player = state["combat"]["combatants"]["player"]
+        player["conditions"] = [{"id": "prone"}]
+
+        self.apply(state, {"type": "end_turn", "actor_id": "player"})
+        self.apply(state, {"type": "end_turn", "actor_id": "goblin-1"})
+
+        self.assertEqual(player["movement_remaining"], 30)
+        result = self.apply(
+            state,
+            {"type": "move", "actor_id": "player", "distance": 5},
+        )
+        self.assertEqual(result["outcome"]["movement_remaining"], 10)
+        self.assertEqual(player["conditions"], [])
+
+    def test_removing_prone_allows_normal_movement(self):
+        state = {}
+        self.start(state)
+        player = state["combat"]["combatants"]["player"]
+        player["conditions"] = [{"id": "prone"}]
+        player["conditions"] = []
+
+        result = self.apply(
+            state,
+            {"type": "move", "actor_id": "player", "distance": 5},
+        )
+
+        self.assertEqual(result["outcome"]["movement_remaining"], 25)
+
+    def test_expiring_prone_allows_normal_movement(self):
+        state = {}
+        self.start(state)
+        player = state["combat"]["combatants"]["player"]
+        player["conditions"] = [
+            {
+                "id": "prone",
+                "duration": {"kind": "turns", "remaining": 1},
+            }
+        ]
+
+        self.apply(state, {"type": "end_turn", "actor_id": "player"})
+        self.apply(state, {"type": "end_turn", "actor_id": "goblin-1"})
+
+        self.assertEqual(player["conditions"], [])
+        result = self.apply(
+            state,
+            {"type": "move", "actor_id": "player", "distance": 5},
+        )
+        self.assertEqual(result["outcome"]["movement_remaining"], 25)
+
     def test_start_combat_rejects_invalid_combatant(self):
         body = api.ResolveRequest(
                 action={
