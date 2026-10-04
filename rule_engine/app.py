@@ -930,12 +930,16 @@ def resolve_start_combat(
         check={'combatant_ids': order},
         rolls=rolls,
         outcome={
-            'combat_started': True,
+            'combat_started': combat['active'],
             'round': 1,
             'turn_index': combat['turn_index'],
             'current_actor_id': combat['current_actor_id'],
             'turn_order': order,
-            'lifecycle_events': ['round_start', 'turn_start'],
+            'lifecycle_events': (
+                ['round_start', 'turn_start']
+                if combat['active']
+                else []
+            ),
         },
         rules_used=[INITIATIVE_RULE_ID, COMBAT_RULE_ID],
     )

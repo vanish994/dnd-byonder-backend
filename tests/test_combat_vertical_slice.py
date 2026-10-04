@@ -538,7 +538,7 @@ class CombatVerticalSliceTests(unittest.TestCase):
 
     def test_all_unconscious_combatants_end_in_a_draw(self):
         state = {}
-        self.start(
+        result = self.start(
             state,
             combatants=self.combatants(player_hp=0, goblin_hp=0),
         )
@@ -547,6 +547,8 @@ class CombatVerticalSliceTests(unittest.TestCase):
         self.assertFalse(combat["active"])
         self.assertIsNone(combat["winner_side"])
         self.assertEqual(combat["available_actions"], [])
+        self.assertFalse(result["outcome"]["combat_started"])
+        self.assertEqual(result["outcome"]["lifecycle_events"], [])
 
     def test_post_combat_attack_and_move_are_rejected(self):
         state = {}
