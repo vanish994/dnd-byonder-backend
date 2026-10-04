@@ -778,6 +778,44 @@ class CombatVerticalSliceTests(unittest.TestCase):
             api._require_bonus_action(state["combat"], "player")
         self.assertTrue(player["bonus_action_available"])
 
+    def test_reaction_resource_consumes_once_without_affecting_other_resources(self):
+        state = {}
+        self.start(state)
+        player = state["combat"]["combatants"]["player"]
+        player["movement_remaining"] = 12
+
+        actor = api._require_reaction(state["combat"], "player")
+        api._consume_reaction(actor)
+
+        self.assertFalse(player["reaction_available"])
+        self.assertTrue(player["action_available"])
+        self.assertTrue(player["bonus_action_available"])
+        self.assertEqual(player["movement_remaining"], 12)
+        with self.assertRaisesRegex(ValueError, "BLOCKED_ACTION"):
+            api._require_reaction(state["combat"], "player")
+        self.assertFalse(player["reaction_available"])
+
+    def test_reaction_resource_rejects_unconscious_actor_without_consuming(self):
+        state = {}
+        self.start(state)
+        player = state["combat"]["combatants"]["player"]
+        player["unconscious"] = True
+
+        with self.assertRaisesRegex(ValueError, "unconscious"):
+            api._require_reaction(state["combat"], "player")
+        self.assertTrue(player["reaction_available"])
+
+    def test_reaction_resource_recovers_on_next_turn(self):
+        state = {}
+        self.start(state)
+        player = state["combat"]["combatants"]["player"]
+        api._consume_reaction(api._require_reaction(state["combat"], "player"))
+
+        self.apply(state, {"type": "end_turn", "actor_id": "player"})
+        self.apply(state, {"type": "end_turn", "actor_id": "goblin-1"})
+
+        self.assertTrue(player["reaction_available"])
+
     def test_end_turn_expires_actor_turn_conditions(self):
         state = {}
         self.start(state)
