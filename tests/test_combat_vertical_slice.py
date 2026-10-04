@@ -458,6 +458,106 @@ class CombatVerticalSliceTests(unittest.TestCase):
         self.assertFalse(state["combat"]["active"])
         self.assertEqual(state["combat"]["winner_side"], "player")
 
+    def test_damage_above_zero_keeps_target_conscious(self):
+        state = {}
+        self.start(state)
+        self.attack(state, d20=20, d8=1)
+
+        target = state["combat"]["combatants"]["goblin-1"]
+        self.assertEqual(target["hp"], 3)
+        self.assertFalse(target["unconscious"])
+
+    def test_unconscious_current_actor_is_not_selected_at_combat_start(self):
+        state = {}
+        combatants = self.combatants(player_hp=0)
+        combatants.append(
+            {
+                "id": "player-2",
+                "hp": 10,
+                "max_hp": 10,
+                "ac": 14,
+                "initiative_modifier": 1,
+                "position": 0,
+                "movement_speed": 30,
+                "side": "player",
+            }
+        )
+        result = self.start(
+            state,
+            initiative=(20, 10, 1),
+            combatants=combatants,
+        )
+
+        self.assertEqual(state["combat"]["current_actor_id"], "goblin-1")
+        self.assertEqual(result["outcome"]["current_actor_id"], "goblin-1")
+        self.assertTrue(state["combat"]["active"])
+
+    def test_current_actor_becoming_unconscious_advances_to_next_eligible_actor(self):
+        state = {}
+        self.start(state)
+        player = state["combat"]["combatants"]["player"]
+        player["hp"] = 0
+        player["unconscious"] = True
+
+        result = self.apply(state, {"type": "end_turn", "actor_id": "player"})
+
+        self.assertEqual(state["combat"]["current_actor_id"], "goblin-1")
+        self.assertEqual(result["outcome"]["current_actor_id"], "goblin-1")
+
+    def test_unconscious_actor_has_only_end_turn_available(self):
+        state = {}
+        self.start(state)
+        combat = state["combat"]
+        combat["current_actor_id"] = "player"
+        combat["turn_index"] = 0
+        combat["combatants"]["player"]["unconscious"] = True
+
+        self.assertEqual(api._combat_available_actions(combat), [{"type": "end_turn"}])
+
+    def test_unconscious_actor_cannot_use_resources_without_consuming_them(self):
+        state = {}
+        self.start(state)
+        player = state["combat"]["combatants"]["player"]
+        player["unconscious"] = True
+
+        with self.assertRaisesRegex(ValueError, "unconscious"):
+            api._require_bonus_action(state["combat"], "player")
+        with self.assertRaisesRegex(ValueError, "unconscious"):
+            api._require_reaction(state["combat"], "player")
+        self.assertTrue(player["bonus_action_available"])
+        self.assertTrue(player["reaction_available"])
+
+    def test_all_unconscious_combatants_end_in_a_draw(self):
+        state = {}
+        self.start(
+            state,
+            combatants=self.combatants(player_hp=0, goblin_hp=0),
+        )
+
+        combat = state["combat"]
+        self.assertFalse(combat["active"])
+        self.assertIsNone(combat["winner_side"])
+        self.assertEqual(combat["available_actions"], [])
+
+    def test_post_combat_attack_and_move_are_rejected(self):
+        state = {}
+        self.start(state, combatants=self.combatants(goblin_hp=1))
+        self.attack(state, d20=20, d8=8)
+
+        with self.assertRaisesRegex(ValueError, "combat is not active"):
+            self.apply(state, {"type": "move", "actor_id": "player", "distance": 1})
+        with self.assertRaisesRegex(ValueError, "combat is not active"):
+            self.apply(
+                state,
+                {
+                    "type": "attack",
+                    "actor_id": "player",
+                    "target_id": "goblin-1",
+                    "attack_bonus": 5,
+                    "damage": {"dice": "1d8", "modifier": 3},
+                },
+            )
+
     def test_unconscious_actor_cannot_move_or_attack(self):
         combatants = self.combatants(player_hp=0)
         state = {}

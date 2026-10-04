@@ -747,7 +747,24 @@ def _consume_reaction(actor: dict[str, Any]) -> None:
 def _finish_combat_if_needed(combat: dict[str, Any]) -> None:
     combatants = combat['combatants']
     sides = {item.get('side', 'neutral') for item in combatants.values()}
-    defeated = [side for side in sides if not any(item.get('side') == side and item.get('hp', 0) > 0 for item in combatants.values())]
+    living_sides = {
+        item.get('side', 'neutral')
+        for item in combatants.values()
+        if not item.get('unconscious')
+    }
+    if not living_sides:
+        combat['active'] = False
+        combat['winner_side'] = None
+        combat['available_actions'] = []
+        return
+    defeated = [
+        side
+        for side in sides
+        if not any(
+            item.get('side') == side and not item.get('unconscious')
+            for item in combatants.values()
+        )
+    ]
     if len(sides) >= 2 and defeated:
         winners = [side for side in sides if side not in defeated]
         combat['active'] = False
@@ -898,6 +915,14 @@ def resolve_start_combat(
         'combatants': combatants,
         'winner_side': None,
     }
+    _finish_combat_if_needed(combat)
+    if combat['active']:
+        for index, actor_id in enumerate(order):
+            if not combat['combatants'][actor_id].get('unconscious'):
+                combat['turn_index'] = index
+                combat['current_actor_id'] = actor_id
+                _start_turn(combat, combat['combatants'][actor_id])
+                break
     combat['available_actions'] = _combat_available_actions(combat)
     body.state['combat'] = combat
     return _combat_resolution(
@@ -908,7 +933,7 @@ def resolve_start_combat(
             'combat_started': True,
             'round': 1,
             'turn_index': 0,
-            'current_actor_id': order[0],
+            'current_actor_id': combat['current_actor_id'],
             'turn_order': order,
             'lifecycle_events': ['round_start', 'turn_start'],
         },
