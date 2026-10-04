@@ -119,6 +119,59 @@ class CombatVerticalSliceTests(unittest.TestCase):
         self.start(state, initiative=(10, 10, 10), combatants=combatants)
         self.assertEqual(state["combat"]["turn_order"], ["alpha", "bravo", "zeta"])
 
+    def test_start_combat_emits_initial_round_and_turn_events(self):
+        state = {}
+        result = self.start(state)
+
+        self.assertEqual(
+            result["outcome"]["lifecycle_events"],
+            ["round_start", "turn_start"],
+        )
+
+    def test_empty_combatants_are_rejected(self):
+        with self.assertRaisesRegex(ValueError, "combatants cannot be empty"):
+            api._validate_initiative_state(
+                {
+                    "combatants": {},
+                    "turn_order": [],
+                    "current_actor_id": None,
+                    "turn_index": 0,
+                }
+            )
+
+    def test_initiative_state_rejects_duplicate_or_unknown_ids(self):
+        state = {}
+        self.start(state)
+        combat = state["combat"]
+
+        combat["turn_order"] = ["player", "player"]
+        with self.assertRaisesRegex(ValueError, "duplicate actor"):
+            api._validate_initiative_state(combat)
+
+        combat["turn_order"] = ["player", "missing"]
+        with self.assertRaisesRegex(ValueError, "unknown actor"):
+            api._validate_initiative_state(combat)
+
+    def test_initiative_state_rejects_invalid_current_actor(self):
+        state = {}
+        self.start(state)
+        combat = state["combat"]
+        combat["current_actor_id"] = "missing"
+
+        with self.assertRaisesRegex(ValueError, "current actor does not exist"):
+            api._validate_initiative_state(combat)
+
+    def test_initiative_state_rejects_order_missing_current_actor(self):
+        state = {}
+        self.start(state)
+        combat = state["combat"]
+        combat["turn_order"] = ["player"]
+        combat["turn_index"] = 0
+        combat["current_actor_id"] = "goblin-1"
+
+        with self.assertRaisesRegex(ValueError, "does not contain every combatant"):
+            api._validate_initiative_state(combat)
+
     def test_move_updates_position_and_remaining_movement(self):
         state = {}
         self.start(state)
@@ -352,6 +405,22 @@ class CombatVerticalSliceTests(unittest.TestCase):
         self.assertTrue(goblin["bonus_action_available"])
         self.assertTrue(goblin["reaction_available"])
 
+        self.assertEqual(
+            state["combat"]["available_actions"],
+            [{"type": "move"}, {"type": "attack"}, {"type": "end_turn"}],
+        )
+
+    def test_end_turn_emits_turn_lifecycle_events(self):
+        state = {}
+        self.start(state)
+
+        result = self.apply(state, {"type": "end_turn", "actor_id": "player"})
+
+        self.assertEqual(
+            result["outcome"]["lifecycle_events"],
+            ["turn_end", "turn_start"],
+        )
+
     def test_end_turn_wraps_and_starts_new_round(self):
         state = {}
         self.start(state)
@@ -362,6 +431,22 @@ class CombatVerticalSliceTests(unittest.TestCase):
         self.assertEqual(state["combat"]["round"], 2)
         self.assertEqual(state["combat"]["turn_index"], 0)
         self.assertEqual(state["combat"]["current_actor_id"], "player")
+        self.assertEqual(
+            result["outcome"]["lifecycle_events"],
+            ["turn_end", "round_end", "round_start", "turn_start"],
+        )
+
+    def test_end_turn_with_no_eligible_actor_has_bounded_terminal_result(self):
+        state = {}
+        self.start(state)
+        for actor in state["combat"]["combatants"].values():
+            actor["unconscious"] = True
+
+        result = self.apply(state, {"type": "end_turn", "actor_id": "player"})
+
+        self.assertFalse(result["outcome"]["combat_active"])
+        self.assertTrue(result["outcome"]["combat_ended"])
+        self.assertEqual(result["outcome"]["lifecycle_events"], ["turn_end"])
 
     def test_hp_is_clamped_to_zero_and_combat_ends(self):
         state = {}

@@ -593,9 +593,73 @@ def _validate_movement_state(actor: dict[str, Any]) -> None:
         raise ValueError('invalid position')
 
 
+def _validate_initiative_state(combat: dict[str, Any]) -> None:
+    combatants = combat.get('combatants')
+    if not isinstance(combatants, dict) or not combatants:
+        raise ValueError('combatants cannot be empty')
+
+    order = combat.get('turn_order')
+    if not isinstance(order, list) or not order:
+        raise ValueError('initiative order cannot be empty')
+    if any(not isinstance(actor_id, str) for actor_id in order):
+        raise ValueError('initiative order contains invalid actor')
+    if len(order) != len(set(order)):
+        raise ValueError('initiative order contains duplicate actor')
+    if any(actor_id not in combatants for actor_id in order):
+        raise ValueError('initiative order contains unknown actor')
+    if set(order) != set(combatants):
+        raise ValueError('initiative order does not contain every combatant')
+
+    current_actor_id = combat.get('current_actor_id')
+    if current_actor_id not in combatants:
+        raise ValueError('current actor does not exist')
+    if current_actor_id not in order:
+        raise ValueError('current actor is outside initiative order')
+
+    turn_index = combat.get('turn_index')
+    if (
+        not isinstance(turn_index, int)
+        or isinstance(turn_index, bool)
+        or turn_index < 0
+        or turn_index >= len(order)
+        or order[turn_index] != current_actor_id
+    ):
+        raise ValueError('turn index is inconsistent with current actor')
+
+
+def _start_turn(combat: dict[str, Any], actor: dict[str, Any]) -> None:
+    actor['action_available'] = True
+    actor['bonus_action_available'] = True
+    actor['reaction_available'] = True
+    actor['movement_remaining'] = (
+        0
+        if has_condition(actor, 'grappled') or has_condition(actor, 'restrained')
+        else actor['movement_speed']
+    )
+
+
+def _determine_next_actor(
+    combat: dict[str, Any],
+) -> tuple[dict[str, Any] | None, int, bool]:
+    order = combat['turn_order']
+    previous_index = combat['turn_index']
+    next_index = previous_index
+    wrapped = False
+    for _ in range(len(order)):
+        next_index += 1
+        if next_index >= len(order):
+            next_index = 0
+            wrapped = True
+        candidate = combat['combatants'][order[next_index]]
+        if not candidate.get('unconscious'):
+            return candidate, next_index, wrapped
+    return None, previous_index, wrapped
+
+
 def _combat_available_actions(combat: dict[str, Any]) -> list[dict[str, str]]:
     if not combat.get('active'):
         return []
+    _validate_initiative_state(combat)
     actor = combat.get('combatants', {}).get(combat.get('current_actor_id'))
     if not actor or actor.get('unconscious'):
         return [{'type': 'end_turn'}]
@@ -641,6 +705,7 @@ def _require_combat(state: dict[str, Any]) -> dict[str, Any]:
         raise ValueError('combat is not active')
     if not isinstance(combat.get('combatants'), dict):
         raise ValueError('combatants are missing')
+    _validate_initiative_state(combat)
     return combat
 
 
@@ -770,6 +835,8 @@ def resolve_start_combat(
         raise TypeError('resolve_start_combat requires a validated action')
     if body.state.get('combat', {}).get('active'):
         raise ValueError('combat is already active')
+    if not action.combatants:
+        raise ValueError('combatants cannot be empty')
     combatants: dict[str, dict[str, Any]] = {}
     rolls: list[dict[str, Any]] = []
     initiative_rows: list[tuple[str, int, int]] = []
@@ -843,6 +910,7 @@ def resolve_start_combat(
             'turn_index': 0,
             'current_actor_id': order[0],
             'turn_order': order,
+            'lifecycle_events': ['round_start', 'turn_start'],
         },
         rules_used=[INITIATIVE_RULE_ID, COMBAT_RULE_ID],
     )
@@ -979,20 +1047,7 @@ def resolve_end_turn(body: ResolveRequest) -> dict[str, Any]:
         actor,
         timing="turn_end",
     )
-    order = combat['turn_order']
-    previous_index = combat['turn_index']
-    next_index = previous_index
-    wrapped = False
-    next_actor = None
-    for _ in range(len(order)):
-        next_index += 1
-        if next_index >= len(order):
-            next_index = 0
-            wrapped = True
-        candidate = combat['combatants'][order[next_index]]
-        if not candidate.get('unconscious'):
-            next_actor = candidate
-            break
+    next_actor, next_index, wrapped = _determine_next_actor(combat)
     if next_actor is None:
         combat['active'] = False
         combat['available_actions'] = []
@@ -1002,6 +1057,7 @@ def resolve_end_turn(body: ResolveRequest) -> dict[str, Any]:
             outcome={
                 'combat_active': False,
                 'combat_ended': True,
+                'lifecycle_events': ['turn_end'],
                 'expired_conditions': [
                     condition["id"]
                     for condition in expired_conditions
@@ -1012,15 +1068,12 @@ def resolve_end_turn(body: ResolveRequest) -> dict[str, Any]:
         combat['round'] += 1
     combat['turn_index'] = next_index
     combat['current_actor_id'] = next_actor['id']
-    next_actor['action_available'] = True
-    next_actor['bonus_action_available'] = True
-    next_actor['reaction_available'] = True
-    next_actor['movement_remaining'] = (
-        0
-        if has_condition(next_actor, 'grappled') or has_condition(next_actor, 'restrained')
-        else next_actor['movement_speed']
-    )
+    _start_turn(combat, next_actor)
     combat['available_actions'] = _combat_available_actions(combat)
+    lifecycle_events = ['turn_end']
+    if wrapped:
+        lifecycle_events.extend(['round_end', 'round_start'])
+    lifecycle_events.append('turn_start')
     return _combat_resolution(
         {'type': 'end_turn', 'actor_id': action.actor_id},
         check={}, rolls=[],
@@ -1030,6 +1083,7 @@ def resolve_end_turn(body: ResolveRequest) -> dict[str, Any]:
             'round': combat['round'],
             'turn_index': next_index,
             'current_actor_id': next_actor['id'],
+            'lifecycle_events': lifecycle_events,
             'expired_conditions': [
                 condition["id"]
                 for condition in expired_conditions
