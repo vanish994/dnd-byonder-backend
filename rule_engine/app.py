@@ -381,13 +381,16 @@ def resolve_attack(
     *,
     randbelow: Callable[[int], int] | None = None,
 ):
-    """Resolve the supported attack-roll MVP without critical rules."""
+    """Resolve an attack roll, including natural 20 and natural 1 classification."""
     action = body.action
     if not isinstance(action, AttackAction):
         raise TypeError('resolve_attack requires a validated attack action')
     roll = roll_dice('d20', randbelow=randbelow)
     d20_result = roll['rolls'][0]
     total = d20_result + action.attack_bonus
+    critical = d20_result == 20
+    natural_1 = d20_result == 1
+    hit = True if critical else False if natural_1 else total >= action.target_ac
     return {
         'schema_version': RULE_RESOLUTION_SCHEMA_VERSION,
         'resolution_id': str(uuid.uuid4()),
@@ -398,6 +401,11 @@ def resolve_attack(
             'target_ac': action.target_ac,
         },
         'rolls': [{'type': 'd20', 'result': d20_result}],
-        'outcome': {'total': total, 'hit': total >= action.target_ac},
+        'outcome': {
+            'total': total,
+            'hit': hit,
+            'critical': critical,
+            'natural_1': natural_1,
+        },
         'rules_used': [ATTACK_ROLL_RULE_ID],
     }

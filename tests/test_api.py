@@ -232,41 +232,66 @@ class RuleEngineApiTests(unittest.TestCase):
             self.attack(), randbelow=self.randbelow_for(14)
         )
 
-        self.assertEqual(result["outcome"], {"total": 19, "hit": True})
+        self.assertEqual(
+            result["outcome"],
+            {"total": 19, "hit": True, "critical": False, "natural_1": False},
+        )
 
     def test_attack_roll_misses(self):
         result = api.resolve_request(
             self.attack(), randbelow=self.randbelow_for(7)
         )
 
-        self.assertEqual(result["outcome"], {"total": 12, "hit": False})
+        self.assertEqual(
+            result["outcome"],
+            {"total": 12, "hit": False, "critical": False, "natural_1": False},
+        )
 
     def test_attack_roll_hits_at_exact_target_ac(self):
         result = api.resolve_request(
             self.attack(), randbelow=self.randbelow_for(10)
         )
 
-        self.assertEqual(result["outcome"], {"total": 15, "hit": True})
+        self.assertEqual(
+            result["outcome"],
+            {"total": 15, "hit": True, "critical": False, "natural_1": False},
+        )
 
-    def test_attack_roll_natural_1_has_no_critical_failure(self):
+    def test_attack_roll_natural_1_is_automatic_miss_with_large_bonus(self):
         result = api.resolve_attack(
-            self.attack(attack_bonus=5, target_ac=15),
+            self.attack(attack_bonus=20, target_ac=5),
             randbelow=self.randbelow_for(1),
         )
 
         self.assertEqual(result["rolls"], [{"type": "d20", "result": 1}])
-        self.assertEqual(result["outcome"], {"total": 6, "hit": False})
-        self.assertNotIn("critical_failure", result)
+        self.assertEqual(
+            result["outcome"],
+            {"total": 21, "hit": False, "critical": False, "natural_1": True},
+        )
+        self.assertNotIn("damage", result)
 
-    def test_attack_roll_natural_20_has_no_critical_hit(self):
+    def test_attack_roll_natural_20_is_automatic_hit_with_impossible_ac(self):
         result = api.resolve_attack(
-            self.attack(attack_bonus=5, target_ac=30),
+            self.attack(attack_bonus=-5, target_ac=30),
             randbelow=self.randbelow_for(20),
         )
 
         self.assertEqual(result["rolls"], [{"type": "d20", "result": 20}])
-        self.assertEqual(result["outcome"], {"total": 25, "hit": False})
-        self.assertNotIn("critical_hit", result)
+        self.assertEqual(
+            result["outcome"],
+            {"total": 15, "hit": True, "critical": True, "natural_1": False},
+        )
+        self.assertNotIn("damage", result)
+
+    def test_attack_roll_natural_flags_are_mutually_exclusive(self):
+        for d20_result in (1, 20):
+            with self.subTest(d20_result=d20_result):
+                result = api.resolve_attack(
+                    self.attack(), randbelow=self.randbelow_for(d20_result)
+                )
+                self.assertNotEqual(
+                    result["outcome"]["critical"], result["outcome"]["natural_1"]
+                )
 
     def test_attack_roll_contract_and_rule_id(self):
         result = api.resolve_request(
