@@ -11,7 +11,14 @@ from typing import Any, Literal
 from fastapi import FastAPI, Header, HTTPException, Query
 from pydantic import BaseModel, Field, StrictInt, StrictStr, ValidationError, constr, model_validator
 
-from game.contracts import GameTurnRequest, GameTurnResponse
+from game.contracts import (
+    CharacterCreationResponse,
+    CharacterOptionsResponse,
+    CharacterValidationResponse,
+    GameTurnRequest,
+    GameTurnResponse,
+    GuidedCharacterRequest,
+)
 from game.orchestrator import (
     GameOrchestrator,
     InvalidGameAction,
@@ -22,6 +29,8 @@ from rule_engine.dice import MAX_MODIFIER, DiceExpressionError, roll_dice
 from rule_engine.character import (
     SKILL_TO_ABILITY,
     Character,
+    build_guided_character,
+    character_options,
     character_to_state,
     derive_character,
 )
@@ -323,6 +332,48 @@ def context(
 def resolve(body: ResolveRequest, x_api_key: str | None = Header(default=None)):
     authorize(x_api_key)
     return resolve_request(body)
+
+
+@app.get('/v1/character/options', response_model=CharacterOptionsResponse)
+def get_character_options(x_api_key: str | None = Header(default=None)):
+    authorize(x_api_key)
+    return character_options()
+
+
+def _guided_character_preview(body: GuidedCharacterRequest) -> tuple[dict[str, Any], dict[str, Any]]:
+    try:
+        character = build_guided_character(body)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    resolution_body = ResolveRequest(action=CreateCharacterAction(type='create_character', character=character))
+    resolution = resolve_request(resolution_body)
+    return {
+        'schema_version': 'character-creation-v1',
+        'valid': True,
+        'character': resolution_body.state['character'],
+        'derived': resolution['outcome']['derived'],
+        'rule_resolution': resolution,
+    }, resolution_body.state
+
+
+@app.post('/v1/character/validate', response_model=CharacterValidationResponse)
+def validate_character(body: GuidedCharacterRequest, x_api_key: str | None = Header(default=None)):
+    authorize(x_api_key)
+    preview, _state = _guided_character_preview(body)
+    return preview
+
+
+@app.post('/v1/character/create', response_model=CharacterCreationResponse)
+def create_character(body: GuidedCharacterRequest, x_api_key: str | None = Header(default=None)):
+    authorize(x_api_key)
+    preview, state = _guided_character_preview(body)
+    return {
+        **preview,
+        'campaign_id': str(uuid.uuid4()),
+        'state': state,
+        # The orchestrator has no non-combat structured actions until a scene starts.
+        'available_actions': [],
+    }
 
 
 def resolve_game_action(action: dict[str, Any], state: dict[str, Any]) -> dict[str, Any]:

@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import uuid
 from math import floor
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, StrictInt, StrictStr, model_validator
 
+from game.contracts import GuidedCharacterRequest
 from rule_engine.dice import MAX_MODIFIER
 
 ABILITIES = (
@@ -46,6 +48,76 @@ WEAPON_CATALOG = {
         "proficient": True,
     }
 }
+
+# Guided creation is deliberately narrower than the existing Character and combat models.
+STANDARD_ARRAY = (15, 14, 13, 12, 10, 8)
+FIGHTER_LEVELS = (1,)
+FIGHTER_SKILL_COUNT = 2
+# 2024 Fighter proficiency choices: https://www.dndbeyond.com/classes/2190879-fighter
+FIGHTER_SKILLS = (
+    "acrobatics", "animal_handling", "athletics", "history", "insight",
+    "intimidation", "persuasion", "perception", "survival",
+)
+FIGHTER_SAVING_THROWS = ("strength", "constitution")
+FIGHTER_WEAPONS = ("longsword",)
+
+ABILITY_PRESENTATION = {
+    "strength": ("STR", "Força", "Usada em ataques físicos e esforços de força."),
+    "dexterity": ("DEX", "Destreza", "Ajuda na defesa, na iniciativa e em movimentos ágeis."),
+    "constitution": ("CON", "Constituição", "Ajuda a determinar seus pontos de vida."),
+    "intelligence": ("INT", "Inteligência", "Ajuda a recordar fatos e raciocinar."),
+    "wisdom": ("WIS", "Sabedoria", "Ajuda a perceber o ambiente e interpretar sinais."),
+    "charisma": ("CHA", "Carisma", "Ajuda a conversar, convencer e inspirar."),
+}
+FIGHTER_SKILL_LABELS = {
+    "acrobatics": "Acrobacia",
+    "animal_handling": "Lidar com Animais",
+    "athletics": "Atletismo",
+    "history": "História",
+    "insight": "Intuição",
+    "intimidation": "Intimidação",
+    "persuasion": "Persuasão",
+    "perception": "Percepção",
+    "survival": "Sobrevivência",
+}
+
+
+def character_options() -> dict[str, Any]:
+    """Return a fresh, versioned public catalog driven by the supported rules."""
+    return {
+        "schema_version": "character-options-v1",
+        "classes": [{
+            "id": "fighter",
+            "label": "Guerreiro",
+            "levels": list(FIGHTER_LEVELS),
+            "skill_choices": {"count": FIGHTER_SKILL_COUNT, "options": list(FIGHTER_SKILLS)},
+            "saving_throw_proficiencies": list(FIGHTER_SAVING_THROWS),
+            "weapon_options": list(FIGHTER_WEAPONS),
+        }],
+        "levels": list(FIGHTER_LEVELS),
+        "standard_array": list(STANDARD_ARRAY),
+        "abilities": [
+            {"id": ability, "abbreviation": ABILITY_PRESENTATION[ability][0],
+             "label": ABILITY_PRESENTATION[ability][1],
+             "description": ABILITY_PRESENTATION[ability][2]}
+            for ability in ABILITIES
+        ],
+        "skills": [
+            {"id": skill, "label": FIGHTER_SKILL_LABELS[skill], "ability": SKILL_TO_ABILITY[skill]}
+            for skill in FIGHTER_SKILLS
+        ],
+        "weapons": [
+            {**WEAPON_CATALOG[weapon_id], "label": "Espada longa"}
+            for weapon_id in FIGHTER_WEAPONS
+        ],
+        "selection_rules": {
+            "ability_assignment": {
+                "mode": "standard_array", "use_all_values": True, "each_ability_once": True,
+            },
+            "skills": {"unique": True},
+            "weapons": {"count": 1},
+        },
+    }
 
 
 def ability_modifier(score: int) -> int:
@@ -124,6 +196,7 @@ class Proficiencies(BaseModel):
 
 class Character(BaseModel):
     id: StrictStr = Field(min_length=1, max_length=64)
+    name: StrictStr | None = Field(default=None, min_length=1, max_length=64)
     level: StrictInt = Field(ge=1, le=20)
     abilities: dict[str, StrictInt]
     class_: ClassFoundation = Field(alias="class")
@@ -171,6 +244,14 @@ class Character(BaseModel):
         }
         max_hp = CLASS_HIT_DIE[self.class_.id] + modifiers["constitution"]
         current_hp = max_hp if self.current_hp is None else self.current_hp
+        weapons = {}
+        for weapon_id, weapon in self.weapons.items():
+            modifier = modifiers[weapon.ability]
+            weapons[weapon_id] = {
+                **weapon.model_dump(),
+                "attack_bonus": modifier + (prof if weapon.proficient else 0),
+                "damage_modifier": modifier,
+            }
         return {
             "ability_modifiers": modifiers,
             "proficiency_bonus": prof,
@@ -179,6 +260,7 @@ class Character(BaseModel):
             "hp": {"current": current_hp, "max": max_hp},
             "ac": {"value": 10 + modifiers["dexterity"], "source": "unarmored"},
             "initiative_modifier": modifiers["dexterity"],
+            "weapons": weapons,
         }
 
     def weapon(self, weapon_id: str) -> WeaponFoundation:
@@ -196,7 +278,7 @@ class Character(BaseModel):
 
 
 def character_to_state(character: Character) -> dict[str, Any]:
-    return {
+    state = {
         "id": character.id,
         "level": character.level,
         "class": character.class_.model_dump(),
@@ -205,6 +287,44 @@ def character_to_state(character: Character) -> dict[str, Any]:
         "weapons": {key: value.model_dump() for key, value in character.weapons.items()},
         "current_hp": character.current_hp,
     }
+    if character.name is not None:
+        state["name"] = character.name
+    return state
+
+
+def build_guided_character(selection: GuidedCharacterRequest) -> Character:
+    """Validate the selected catalog values and construct the existing mechanics model."""
+    if selection.class_id != "fighter":
+        raise ValueError("unsupported class")
+    if selection.level not in FIGHTER_LEVELS:
+        raise ValueError("unsupported level for fighter")
+    if set(selection.abilities) != set(ABILITIES):
+        raise ValueError("abilities must include exactly the catalog abilities")
+    if sorted(selection.abilities.values()) != sorted(STANDARD_ARRAY):
+        raise ValueError("abilities must use the complete standard array exactly once")
+    if len(selection.skills) != FIGHTER_SKILL_COUNT:
+        raise ValueError("incorrect number of fighter skills")
+    if len(set(selection.skills)) != len(selection.skills):
+        raise ValueError("fighter skills must be unique")
+    if not set(selection.skills).issubset(FIGHTER_SKILLS):
+        raise ValueError("unsupported fighter skill")
+    if selection.weapon_id not in FIGHTER_WEAPONS:
+        raise ValueError("unsupported fighter weapon")
+
+    character_data = {
+        "id": f"character-{uuid.uuid4().hex}",
+        "name": selection.name,
+        "level": selection.level,
+        "class": {"id": selection.class_id, "level": selection.level},
+        "abilities": dict(selection.abilities),
+        "proficiencies": {
+            "skills": {skill: True for skill in selection.skills},
+            "saving_throws": {ability: True for ability in FIGHTER_SAVING_THROWS},
+        },
+        "weapons": {selection.weapon_id: WEAPON_CATALOG[selection.weapon_id]},
+    }
+    character = Character.model_validate(character_data)
+    return Character.model_validate({**character_data, "current_hp": character.derived()["hp"]["max"]})
 
 
 def derive_character(value: dict[str, Any] | Character) -> tuple[Character, dict[str, Any]]:
