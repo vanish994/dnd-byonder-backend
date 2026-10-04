@@ -9,12 +9,12 @@
 | Arquivo | Responsabilidade | Observação |
 |---|---|---|
 | `services/__init__.py` | Marcar o pacote de serviços | Pode ser vazio. |
-| `services/mimo_narrator.py` | Cliente HTTP do proxy MiMo | Bearer auth, timeout, `stream=false`, normalização de erros e extração de `choices[0].message.content`. |
+| `services/groq_narrator.py` | Cliente HTTP do proxy Groq | Bearer auth, timeout, `stream=false`, normalização de erros e extração de `choices[0].message.content`. |
 | `game/__init__.py` | Marcar o pacote de domínio do jogo | Pode ser vazio. |
 | `game/contracts.py` | Contratos Pydantic do turno | `GameTurnRequest`, `GameTurnResponse`, `CampaignState` e referência ao `AbilityCheckAction` do Rule Engine; `rule_resolution` sempre usa envelope v1. |
 | `game/narrator.py` | Construção determinística da mensagem | Serializa estado, `rule-resolution-v1` ou `{}` e fala do jogador. Não interpreta regras. |
-| `game/orchestrator.py` | Coordenação do turno | Chama o resolver local somente para ação estruturada e depois o cliente MiMo. |
-| `tests/test_mimo_narrator.py` | Testes unitários do cliente MiMo | Usa transporte/mock; não chama o proxy real. |
+| `game/orchestrator.py` | Coordenação do turno | Chama o resolver local somente para ação estruturada e depois o cliente Groq. |
+| `tests/test_groq_narrator.py` | Testes unitários do cliente Groq | Usa transporte/mock; não chama o proxy real. |
 | `tests/test_game_orchestrator.py` | Testes do fluxo de domínio | Verifica turno narrativo, ability check, estado e fail-closed. |
 | `tests/test_game_api.py` | Testes do endpoint HTTP | Verifica 200, 401, 422, 502 e 503. |
 
@@ -22,11 +22,11 @@
 
 | Arquivo | Alteração prevista | Limite de compatibilidade |
 |---|---|---|
-| `rule_engine/app.py` | Importar contratos/orchestrator, criar configuração do MiMo e expor `POST /v1/game/turn`. | Não alterar a lógica existente de `/v1/resolve`, `/v1/dice/roll`, busca ou health. Reutilizar `authorize` e `resolve_request`. |
+| `rule_engine/app.py` | Importar contratos/orchestrator, criar configuração do Groq e expor `POST /v1/game/turn`. | Não alterar a lógica existente de `/v1/resolve`, `/v1/dice/roll`, busca ou health. Reutilizar `authorize` e `resolve_request`. |
 | `requirements.txt` | Adicionar cliente HTTP fixado, preferencialmente `httpx==0.28.1`. | Não remover FastAPI ou Uvicorn. |
 | `GAME_CONTRACT.md` | Documentar `GameTurnRequest`, `GameTurnResponse`, `rule_resolution` e o envelope `<FATOS_RESOLVIDOS>`. | Remover exemplos legados que sugiram `facts_resolved` paralelo. |
 | `RULE_ENGINE.md` | Documentar `POST /v1/game/turn`, autenticação, limites do v1 e códigos de erro. | Manter a documentação dos endpoints existentes. |
-| `DEPLOY_RENDER.md` | Adicionar `MIMO_BASE_URL`, `MIMO_MODEL`, `MIMO_API_KEY` e `MIMO_TIMEOUT_SECONDS`. | Não confundir `MIMO_API_KEY` com `RULE_ENGINE_API_KEY`. |
+| `DEPLOY_RENDER.md` | Adicionar `GROQ_BASE_URL`, `GROQ_MODEL`, `GROQ_API_KEY` e `GROQ_TIMEOUT_SECONDS`. | Não confundir `GROQ_API_KEY` com `RULE_ENGINE_API_KEY`. |
 | `render.yaml` | Declarar as variáveis não secretas e placeholders/secrets necessários, conforme o padrão já usado pelo projeto. | Não colocar chaves reais no repositório. |
 
 ## 3. Arquivos preservados
@@ -52,7 +52,7 @@ rule_engine/app.py
     ├── game.orchestrator
     │     ├── game.narrator
     │     ├── rule_engine.app.resolve_request
-    │     └── services.mimo_narrator
+    │     └── services.groq_narrator
     └── authorize
 ```
 
@@ -75,20 +75,20 @@ Não criar, retornar ou encaminhar:
 - `rule_id` legado;
 - um objeto de resolução alternativo ao `rule-resolution-v1`;
 - sucesso/falha inferido de `player_input`;
-- chamada `player_input → MiMo → decisão mecânica`;
+- chamada `player_input → Groq → decisão mecânica`;
 - chamada HTTP interna para `/v1/resolve` quando o endpoint e o resolver estão no mesmo processo.
 
 ## 6. Sequência de implementação recomendada
 
 1. Criar `game/narrator.py` e seus testes puros.
 2. Criar `game/contracts.py` e validar payloads.
-3. Criar `services/mimo_narrator.py` e seus testes com mock.
+3. Criar `services/groq_narrator.py` e seus testes com mock.
 4. Resolver a dependência de importação por injeção ou extração neutra.
 5. Criar `game/orchestrator.py` e testar todos os caminhos.
 6. Alterar `rule_engine/app.py` para expor o endpoint.
 7. Atualizar dependências e documentação/Render.
 8. Rodar a suíte existente do PR #3 e a nova suíte.
-9. Só depois executar o smoke test contra o MiMo real.
+9. Só depois executar o smoke test contra o Groq real.
 
 ## 7. Estado da inspeção
 
@@ -97,6 +97,6 @@ Não criar, retornar ou encaminhar:
 - [x] Contrato `rule-resolution-v1` confirmado.
 - [x] `facts_resolvidos` legado ausente na saída do PR #3.
 - [x] `rule_engine/dice.py` confirmado como rolagem sem adjudicação.
-- [x] Proxy MiMo real responde em `/health` e `/v1/models`.
+- [x] Proxy Groq real responde em `/health` e `/v1/models`.
 - [x] Nenhuma alteração enviada ao GitHub.
 - [ ] Implementação do Marco 5 — fase posterior.

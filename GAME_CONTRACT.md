@@ -4,7 +4,7 @@
 
 1. **Cliente do jogo** recebe a intenção do jogador.
 2. **Motor de regras** consulta e valida regras, calcula a resolução e produz `FATOS_RESOLVIDOS`.
-3. **Proxy Mimo** recebe o prompt do narrador, o histórico, a fala do jogador e os `FATOS_RESOLVIDOS`; apenas narra.
+3. **Proxy Groq** recebe o prompt do narrador, o histórico, a fala do jogador e os `FATOS_RESOLVIDOS`; apenas narra.
 
 O narrador nunca deve receber a responsabilidade de calcular uma ação.
 
@@ -12,11 +12,11 @@ O endpoint `/v1/dice/roll` gera faces de dados e totais, mas não resolve uma a�
 
 > **Nota de compatibilidade:** os exemplos desta seção foram preservados para referência histórica. Eles não são schemas mecânicos do Marco 5. O único contrato mecânico normativo é `rule-resolution-v1`, conforme implementado na branch do PR #3 e descrito na seção Marco 5 abaixo.
 
-## Payload histórico recomendado para o Mimo
+## Payload histórico recomendado para o Groq
 
 ```json
 {
-  "model": "mimo-v2.5-no-thinking",
+  "model": "groq-v2.5-no-thinking",
   "user": "campaign_123",
   "messages": [
     {"role": "system", "content": "<prompt do narrador>"},

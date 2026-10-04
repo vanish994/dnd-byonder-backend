@@ -1,17 +1,17 @@
-# Marco 5 — Game Orchestrator + MiMo Narrator
+# Marco 5 — Game Orchestrator + Groq Narrator
 
 **Status:** especificação para implementação
 
 **Base obrigatória:** branch `feat/ability-check-rule-resolution-v1` (PR #3), não `main`.
 
-**Objetivo:** adicionar o primeiro endpoint de turno sem transformar o MiMo em motor de regras e sem duplicar o contrato `rule-resolution-v1`.
+**Objetivo:** adicionar o primeiro endpoint de turno sem transformar o Groq em motor de regras e sem duplicar o contrato `rule-resolution-v1`.
 
 ## 1. Decisões de arquitetura
 
 1. **Rule Engine decide fatos mecânicos.** Ele continua sendo a única autoridade para rolagem, modificadores, CD, sucesso/falha e futuras mecânicas validadas.
 2. **Orchestrator coordena.** Ele recebe o turno, preserva o estado, encaminha ações estruturadas ao resolver local e monta a mensagem do narrador.
-3. **MiMo narra.** O MiMo não interpreta intenção mecânica, não escolhe CD, não rola dados e não pode declarar sucesso/falha sem receber uma resolução válida.
-4. **O v1 não interpreta texto livre como regra.** `player_input` é enviado ao narrador. Uma regra só é acionada quando o cliente envia `action` em formato estruturado e validado. Isso evita que heurística, regex ou o próprio MiMo virem um segundo Rule Engine.
+3. **Groq narra.** O Groq não interpreta intenção mecânica, não escolhe CD, não rola dados e não pode declarar sucesso/falha sem receber uma resolução válida.
+4. **O v1 não interpreta texto livre como regra.** `player_input` é enviado ao narrador. Uma regra só é acionada quando o cliente envia `action` em formato estruturado e validado. Isso evita que heurística, regex ou o próprio Groq virem um segundo Rule Engine.
 5. **O contrato mecânico único é `rule-resolution-v1`.** O objeto retornado pelo Rule Engine é chamado de `rule_resolution` na resposta do turno. O bloco XML `<FATOS_RESOLVIDOS>` é somente o envelope de transporte desse mesmo objeto para o proxy narrativo; não é um segundo schema.
 6. **O backend é estateless nesta fase.** O estado recebido é devolvido sem mutação persistente. Persistência, autenticação por campanha e concorrência ficam fora do Marco 5.
 
@@ -20,7 +20,7 @@
 ```text
 services/
   __init__.py
-  mimo_narrator.py              # cliente HTTP síncrono do proxy
+  groq_narrator.py              # cliente HTTP síncrono do proxy
 
 game/
   __init__.py
@@ -32,7 +32,7 @@ rule_engine/
   app.py                        # expõe POST /v1/game/turn e injeta dependências
 
 tests/
-  test_mimo_narrator.py
+  test_groq_narrator.py
   test_game_orchestrator.py
   test_game_api.py
 
@@ -44,7 +44,7 @@ requirements.txt                # cliente HTTP, se escolhido
 
 ### Dependência recomendada
 
-Usar `httpx` em modo síncrono para o cliente, com timeout explícito e testes via mock de transporte. Adicionar uma versão fixada compatível com o ambiente atual, por exemplo `httpx==0.28.1`. Não usar o SDK do MiMo nem copiar código do proxy.
+Usar `httpx` em modo síncrono para o cliente, com timeout explícito e testes via mock de transporte. Adicionar uma versão fixada compatível com o ambiente atual, por exemplo `httpx==0.28.1`. Não usar o SDK do Groq nem copiar código do proxy.
 
 ## 3. Contratos canônicos
 
@@ -146,21 +146,21 @@ Regras:
 - `available_actions` é devolvido sem que o Orchestrator interprete ou execute ações futuras.
 - Não expor API key, prompt interno, headers ou corpo bruto do proxy.
 
-## 4. Mensagem enviada ao MiMo
+## 4. Mensagem enviada ao Groq
 
 O cliente deve chamar:
 
 ```text
-{MIMO_BASE_URL}/v1/chat/completions
+{GROQ_BASE_URL}/v1/chat/completions
 ```
 
-O valor de `MIMO_BASE_URL` é a origem/base do serviço, sem o sufixo `/v1/chat/completions`; o cliente deve normalizar uma barra final para evitar `//`.
+O valor de `GROQ_BASE_URL` é a origem/base do serviço, sem o sufixo `/v1/chat/completions`; o cliente deve normalizar uma barra final para evitar `//`.
 
 Payload v1:
 
 ```json
 {
-  "model": "mimo-v2.6-flash",
+  "model": "llama-3.3-70b-versatile",
   "user": "campaign_123",
   "stream": false,
   "messages": [
@@ -182,12 +182,12 @@ O Marco 5 implementa somente `stream: false`. A saída do endpoint do jogo é um
 
 ## 5. Interfaces internas
 
-### `services/mimo_narrator.py`
+### `services/groq_narrator.py`
 
 ```python
-class MimoNarratorError(RuntimeError): ...
+class GroqNarratorError(RuntimeError): ...
 
-class MimoNarratorClient:
+class GroqNarratorClient:
     def __init__(self, base_url: str, model: str, api_key: str,
                  timeout_seconds: float = 30.0): ...
 
@@ -198,14 +198,14 @@ class MimoNarratorClient:
 
 Requisitos:
 
-- `Authorization: Bearer <MIMO_API_KEY>`;
+- `Authorization: Bearer <GROQ_API_KEY>`;
 - `Content-Type: application/json`;
 - `stream: false` sempre;
 - timeout de conexão e leitura configurável, default 30 segundos;
 - não repetir automaticamente uma chamada que possa narrar um turno já resolvido;
-- converter timeout, conexão, HTTP não-2xx, JSON inválido, ausência de `choices` ou conteúdo vazio em `MimoNarratorError`;
+- converter timeout, conexão, HTTP não-2xx, JSON inválido, ausência de `choices` ou conteúdo vazio em `GroqNarratorError`;
 - nunca registrar a API key nem o prompt completo em logs de erro;
-- tratar `MIMO_API_KEY` como obrigatório para ativar `/v1/game/turn`.
+- tratar `GROQ_API_KEY` como obrigatório para ativar `/v1/game/turn`.
 
 ### `game/narrator.py`
 
@@ -222,7 +222,7 @@ Essa função é pura, determinística e testável. Deve usar `json.dumps(..., e
 
 ```python
 class GameOrchestrator:
-    def __init__(self, narrator: MimoNarratorClient): ...
+    def __init__(self, narrator: GroqNarratorClient): ...
 
     def turn(self, request: GameTurnRequest) -> GameTurnResponse: ...
 ```
@@ -235,7 +235,7 @@ Fluxo exato:
 4. se `action` existir, construir `ResolveRequest(action=action, state=state)` e chamar `resolve_request` localmente;
 5. aceitar como fato somente resposta com `schema_version == "rule-resolution-v1"` e `status == "resolved"`;
 6. montar a mensagem do narrador com o fato validado ou `{}` quando o envelope estiver em `needs_rule_validation`;
-7. chamar `MimoNarratorClient.narrate`;
+7. chamar `GroqNarratorClient.narrate`;
 8. devolver a mesma campanha, narrativa, resolução, estado e ações disponíveis.
 
 O Orchestrator não deve chamar `/v1/resolve` por HTTP dentro do mesmo processo. A função de domínio local evita loop de rede e mantém uma única implementação do resolver.
@@ -254,11 +254,11 @@ POST /v1/game/turn
 - retornar `GameTurnResponse` com HTTP 200;
 - retornar 401 para chave inválida;
 - retornar 422 para corpo inválido;
-- retornar 502 para falha do proxy MiMo, sem criar uma narrativa substituta;
+- retornar 502 para falha do proxy Groq, sem criar uma narrativa substituta;
 - retornar 503 se a integração estiver desabilitada por configuração ausente;
 - não alterar o comportamento de `/health`, `/v1/rules/*`, `/v1/dice/roll` ou `/v1/resolve`.
 
-A configuração do cliente deve ser lida no processo (`MIMO_BASE_URL`, `MIMO_MODEL`, `MIMO_API_KEY`). Não hardcodar URL, modelo ou segredo. O default permitido para `MIMO_MODEL` é `mimo-v2.6-flash`; a URL não deve ter default de produção para evitar chamadas acidentais.
+A configuração do cliente deve ser lida no processo (`GROQ_BASE_URL`, `GROQ_MODEL`, `GROQ_API_KEY`). Não hardcodar URL, modelo ou segredo. O default permitido para `GROQ_MODEL` é `llama-3.3-70b-versatile`; a URL não deve ter default de produção para evitar chamadas acidentais.
 
 ## 7. Variáveis Render
 
@@ -266,25 +266,25 @@ No serviço do backend, configurar como secrets/env vars:
 
 ```text
 RULE_ENGINE_API_KEY=<chave que o frontend usa no backend>
-MIMO_BASE_URL=https://dnd-mimo-narrator.onrender.com
-MIMO_MODEL=mimo-v2.6-flash
-MIMO_API_KEY=<API_KEY do proxy MiMo>
-MIMO_TIMEOUT_SECONDS=30
+GROQ_BASE_URL=https://api.groq.com/openai
+GROQ_MODEL=llama-3.3-70b-versatile
+GROQ_API_KEY=<API_KEY do proxy Groq>
+GROQ_TIMEOUT_SECONDS=30
 ```
 
-`MIMO_API_KEY` é diferente de `RULE_ENGINE_API_KEY`. O primeiro autentica backend → proxy; o segundo autentica cliente → backend.
+`GROQ_API_KEY` é diferente de `RULE_ENGINE_API_KEY`. O primeiro autentica backend → proxy; o segundo autentica cliente → backend.
 
-O `DND_NARRATOR_MODE=true` e `DND_NARRATOR_PROMPT_FILE=prompts/dnd_narrator.md` permanecem configuração do serviço MiMo, não deste repositório.
+O `DND_NARRATOR_MODE=true` e `DND_NARRATOR_PROMPT_FILE=prompts/dnd_narrator.md` permanecem configuração do serviço Groq, não deste repositório.
 
 ## 8. Testes obrigatórios
 
-### Cliente MiMo (`tests/test_mimo_narrator.py`)
+### Cliente Groq (`tests/test_groq_narrator.py`)
 
 1. payload correto para turno sem resolução, incluindo `stream: false`;
 2. payload correto com `rule-resolution-v1` integral dentro de `<FATOS_RESOLVIDOS>`;
 3. header Bearer e `Content-Type`;
 4. extração de `choices[0].message.content`;
-5. timeout/conexão/HTTP 4xx ou 5xx viram `MimoNarratorError`;
+5. timeout/conexão/HTTP 4xx ou 5xx viram `GroqNarratorError`;
 6. JSON sem `choices` ou conteúdo vazio falha;
 7. API key não aparece na exceção/log.
 
@@ -296,7 +296,7 @@ O `DND_NARRATOR_MODE=true` e `DND_NARRATOR_PROMPT_FILE=prompts/dnd_narrator.md` 
 4. texto livre nunca é convertido em `ability_check`;
 5. estado de entrada permanece inalterado e é devolvido preservado;
 6. resolução `needs_rule_validation` não chega como fato ao narrador;
-7. falha do MiMo é propagada como erro de integração, sem narrativa inventada;
+7. falha do Groq é propagada como erro de integração, sem narrativa inventada;
 8. `available_actions` é preservado sem execução.
 
 ### API (`tests/test_game_api.py`)
@@ -304,7 +304,7 @@ O `DND_NARRATOR_MODE=true` e `DND_NARRATOR_PROMPT_FILE=prompts/dnd_narrator.md` 
 1. `POST /v1/game/turn` retorna 200 no turno narrativo;
 2. action inválida retorna 422;
 3. chave inválida retorna 401;
-4. MiMo indisponível retorna 502;
+4. Groq indisponível retorna 502;
 5. configuração ausente retorna 503;
 6. endpoints atuais continuam passando.
 
@@ -313,26 +313,26 @@ O `DND_NARRATOR_MODE=true` e `DND_NARRATOR_PROMPT_FILE=prompts/dnd_narrator.md` 
 - [ ] PR #3 está disponível como base e seus testes continuam passando.
 - [ ] `rule-resolution-v1` é o único contrato mecânico versionado.
 - [ ] Não existe campo simultâneo `facts_resolved`/`facts_resolvidos` na resposta.
-- [ ] MiMo nunca recebe responsabilidade de rolar, escolher CD ou decidir sucesso/falha.
+- [ ] Groq nunca recebe responsabilidade de rolar, escolher CD ou decidir sucesso/falha.
 - [ ] Texto livre não aciona resolver automaticamente.
 - [ ] `/v1/game/turn` usa autenticação e variáveis de ambiente separadas.
-- [ ] Falha do MiMo é fail-closed e não produz narrativa de fallback.
+- [ ] Falha do Groq é fail-closed e não produz narrativa de fallback.
 - [ ] Nenhum estado é persistido ou mutado implicitamente no Marco 5.
 - [ ] Testes unitários e de API passam; `compileall`, lint e `git diff --check` passam.
-- [ ] Smoke test contra o MiMo real usa chave do Render sem expor segredo e confirma resposta não vazia.
-- [ ] Só depois da validação a branch `feat/mimo-narrator-orchestrator` pode abrir PR.
+- [ ] Smoke test contra o Groq real usa chave do Render sem expor segredo e confirma resposta não vazia.
+- [ ] Só depois da validação a branch `feat/groq-narrator-orchestrator` pode abrir PR.
 
 ## 10. Procedimento de implementação posterior
 
 1. Criar a branch a partir de `origin/feat/ability-check-rule-resolution-v1`:
 
    ```bash
-   git switch -c feat/mimo-narrator-orchestrator \
+   git switch -c feat/groq-narrator-orchestrator \
      origin/feat/ability-check-rule-resolution-v1
    ```
 
 2. Implementar primeiro contratos e montagem da mensagem, com testes puros.
-3. Implementar o cliente MiMo mockável.
+3. Implementar o cliente Groq mockável.
 4. Implementar o Orchestrator usando o resolver local.
 5. Expor o endpoint e adicionar testes HTTP.
 6. Atualizar documentação e Render.

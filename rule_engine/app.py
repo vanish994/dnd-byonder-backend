@@ -26,8 +26,7 @@ from rule_engine.character import (
     derive_character,
 )
 from rule_engine.source_policy import STRICT_EDITION_SCOPE, append_strict_source_policy
-from services.gemini_narrator import GeminiNarratorClient
-from services.mimo_narrator import MimoNarratorClient
+from services.groq_narrator import GroqNarratorClient
 
 
 logger = logging.getLogger(__name__)
@@ -39,12 +38,9 @@ DB_PATH = Path(
     )
 )
 API_KEY = os.getenv('RULE_ENGINE_API_KEY', '').strip()
-MIMO_BASE_URL = os.getenv('MIMO_BASE_URL', '').strip()
-MIMO_MODEL = os.getenv('MIMO_MODEL', 'mimo-v2.6-flash').strip()
-MIMO_API_KEY = os.getenv('MIMO_API_KEY', '').strip()
-NARRATOR_PROVIDER = os.getenv('NARRATOR_PROVIDER', 'gemini').strip().lower()
-GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '').strip()
-GEMINI_MODEL = os.getenv('GEMINI_MODEL', 'gemini-3.8-flash').strip()
+GROQ_API_KEY = os.getenv('GROQ_API_KEY', '').strip()
+GROQ_MODEL = os.getenv('GROQ_MODEL', '').strip()
+GROQ_BASE_URL = os.getenv('GROQ_BASE_URL', 'https://api.groq.com/openai/v1').strip()
 app = FastAPI(title='D&D 2024 Rule Knowledge API', version='0.1.0')
 
 ABILITY_CHECK_RULE_ID = 'ability_check.mvp.v1'
@@ -342,37 +338,22 @@ def resolve_game_action(action: dict[str, Any], state: dict[str, Any]) -> dict[s
 
 
 def build_game_orchestrator() -> GameOrchestrator:
-    if NARRATOR_PROVIDER == 'gemini':
-        if not GEMINI_API_KEY:
-            raise HTTPException(status_code=503, detail='Gemini narrator is not configured')
-        try:
-            timeout = float(os.getenv('GEMINI_TIMEOUT_SECONDS', '30'))
-            max_output_tokens = int(os.getenv('GEMINI_MAX_OUTPUT_TOKENS', '512'))
-            temperature = float(os.getenv('GEMINI_TEMPERATURE', '0.7'))
-        except ValueError as exc:
-            raise HTTPException(status_code=503, detail='invalid Gemini narrator configuration') from exc
-        narrator = GeminiNarratorClient(
-            api_key=GEMINI_API_KEY,
-            model=GEMINI_MODEL,
-            timeout_seconds=timeout,
-            max_output_tokens=max_output_tokens,
-            temperature=temperature,
-        )
-    elif NARRATOR_PROVIDER == 'mimo':
-        if not MIMO_BASE_URL or not MIMO_API_KEY:
-            raise HTTPException(status_code=503, detail='MiMo narrator is not configured')
-        try:
-            timeout = float(os.getenv('MIMO_TIMEOUT_SECONDS', '30'))
-        except ValueError as exc:
-            raise HTTPException(status_code=503, detail='invalid MIMO_TIMEOUT_SECONDS') from exc
-        narrator = MimoNarratorClient(
-            base_url=MIMO_BASE_URL,
-            model=MIMO_MODEL,
-            api_key=MIMO_API_KEY,
-            timeout_seconds=timeout,
-        )
-    else:
-        raise HTTPException(status_code=503, detail='unsupported narrator provider')
+    if not GROQ_API_KEY or not GROQ_MODEL or not GROQ_BASE_URL:
+        raise HTTPException(status_code=503, detail='Groq narrator is not configured')
+    try:
+        timeout = float(os.getenv('GROQ_TIMEOUT_SECONDS', '30'))
+        max_output_tokens = int(os.getenv('GROQ_MAX_OUTPUT_TOKENS', '512'))
+        temperature = float(os.getenv('GROQ_TEMPERATURE', '0.7'))
+    except ValueError as exc:
+        raise HTTPException(status_code=503, detail='invalid Groq narrator configuration') from exc
+    narrator = GroqNarratorClient(
+        api_key=GROQ_API_KEY,
+        model=GROQ_MODEL,
+        base_url=GROQ_BASE_URL,
+        timeout_seconds=timeout,
+        max_output_tokens=max_output_tokens,
+        temperature=temperature,
+    )
     return GameOrchestrator(narrator, resolve_action=resolve_game_action)
 
 
