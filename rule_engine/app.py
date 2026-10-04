@@ -784,7 +784,17 @@ def _combat_available_actions(combat: dict[str, Any]) -> list[dict[str, str]]:
     _validate_initiative_state(combat)
     actor = combat.get('combatants', {}).get(combat.get('current_actor_id'))
     if not actor or actor.get('unconscious'):
-        return [{'type': 'end_turn'}]
+        if actor:
+            return [{'type': 'end_turn', 'actor_id': actor['id'], 'label': 'Encerrar turno'}]
+        return []
+    if actor.get('side') != 'player':
+        return [{
+            'type': 'end_turn',
+            'actor_id': actor['id'],
+            'label': 'Aguardar o próximo turno',
+            'description': 'O Rule Engine está no turno de outro combatente.',
+            'player_input': 'Aguardo o próximo turno.',
+        }]
     _validate_movement_state(actor)
     sync_movement_with_conditions(actor)
     _validate_movement_state(actor)
@@ -796,21 +806,41 @@ def _combat_available_actions(combat: dict[str, Any]) -> list[dict[str, str]]:
     if movement_available and not (
         has_condition(actor, 'grappled') or has_condition(actor, 'restrained')
     ):
-        actions.append({'type': 'move'})
-    if actor.get('action_uses_remaining', 1 if actor.get('action_available') else 0) > 0:
-        actions.append({'type': 'attack'})
+        actions.append({
+            'type': 'move',
+            'actor_id': actor['id'],
+            'label': 'Mover',
+            'description': 'Escolha a distância, até o movimento restante.',
+        })
+    target_id = next(
+        (
+            candidate_id
+            for candidate_id, candidate in combat.get('combatants', {}).items()
+            if candidate_id != actor['id'] and candidate.get('side') != 'player' and not candidate.get('unconscious')
+        ),
+        None,
+    )
+    if target_id is not None and actor.get('action_uses_remaining', 1 if actor.get('action_available') else 0) > 0:
+        actions.append({
+            'type': 'attack',
+            'actor_id': actor['id'],
+            'target_id': target_id,
+            'label': 'Atacar',
+            'description': 'Ataque o inimigo atual com a arma equipada.',
+            'player_input': 'Ataco o inimigo atual.',
+        })
     character = actor.get('character')
     second_wind = character.get('resources', {}).get('second_wind') if isinstance(character, dict) else None
     if actor.get('bonus_action_available') and isinstance(second_wind, dict) and second_wind.get('current', 0) > 0:
-        actions.append({'type': 'second_wind'})
+        actions.append({'type': 'second_wind', 'actor_id': actor['id'], 'label': 'Segundo Fôlego'})
     action_surge = character.get('resources', {}).get('action_surge') if isinstance(character, dict) else None
     if (
         isinstance(action_surge, dict)
         and action_surge.get('current', 0) > 0
         and not actor.get('action_surge_used_this_turn', False)
     ):
-        actions.append({'type': 'action_surge'})
-    actions.append({'type': 'end_turn'})
+        actions.append({'type': 'action_surge', 'actor_id': actor['id'], 'label': 'Surto de Ação'})
+    actions.append({'type': 'end_turn', 'actor_id': actor['id'], 'label': 'Encerrar turno'})
     return actions
 
 

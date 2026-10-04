@@ -109,10 +109,8 @@ class CombatVerticalSliceTests(unittest.TestCase):
         self.assertTrue(combat["combatants"]["player"]["action_available"])
         self.assertTrue(combat["combatants"]["player"]["bonus_action_available"])
         self.assertTrue(combat["combatants"]["player"]["reaction_available"])
-        self.assertEqual(
-            combat["available_actions"],
-            [{"type": "move"}, {"type": "attack"}, {"type": "end_turn"}],
-        )
+        self.assertEqual([action["type"] for action in combat["available_actions"]], ["move", "attack", "end_turn"])
+        self.assertTrue(all(action["actor_id"] == "player" for action in combat["available_actions"]))
 
     def test_initiative_tie_is_total_then_modifier_then_id(self):
         combatants = [
@@ -213,7 +211,7 @@ class CombatVerticalSliceTests(unittest.TestCase):
         self.assertEqual(result["outcome"]["position"], 10)
         self.assertEqual(player["position"], 10)
         self.assertEqual(player["movement_remaining"], 20)
-        self.assertEqual(state["combat"]["available_actions"], [{"type": "move"}, {"type": "attack"}, {"type": "end_turn"}])
+        self.assertEqual([action["type"] for action in state["combat"]["available_actions"]], ["move", "attack", "end_turn"])
 
     def test_move_over_remaining_is_rejected_without_state_change(self):
         state = {}
@@ -329,6 +327,39 @@ class CombatVerticalSliceTests(unittest.TestCase):
             self.apply(state, {"type": "end_turn", "actor_id": "goblin-1"})
 
         self.assertEqual(state, before)
+
+    def test_npc_turn_exposes_only_npc_end_turn_and_rejects_player_attack(self):
+        state = {}
+        self.start(state)
+        self.apply(state, {"type": "end_turn", "actor_id": "player"})
+        self.assertEqual(state["combat"]["current_actor_id"], "goblin-1")
+        self.assertEqual(
+            state["combat"]["available_actions"],
+            [{
+                "type": "end_turn",
+                "actor_id": "goblin-1",
+                "label": "Aguardar o próximo turno",
+                "description": "O Rule Engine está no turno de outro combatente.",
+                "player_input": "Aguardo o próximo turno.",
+            }],
+        )
+        before = deepcopy(state)
+        with self.assertRaisesRegex(ValueError, "actor is not the current actor"):
+            self.apply(state, {
+                "type": "attack",
+                "actor_id": "player",
+                "target_id": "goblin-1",
+                "attack_bonus": 5,
+                "damage": {"dice": "1d8", "modifier": 3},
+            })
+        self.assertEqual(state, before)
+
+    def test_player_attack_available_action_contains_authoritative_actor_and_target(self):
+        state = {}
+        self.start(state)
+        action = next(item for item in state["combat"]["available_actions"] if item["type"] == "attack")
+        self.assertEqual(action["actor_id"], "player")
+        self.assertEqual(action["target_id"], "goblin-1")
 
     def test_invalid_hp_does_not_replace_existing_state(self):
         state = {"sentinel": "preserve"}
@@ -577,7 +608,13 @@ class CombatVerticalSliceTests(unittest.TestCase):
 
         self.assertEqual(
             state["combat"]["available_actions"],
-            [{"type": "move"}, {"type": "attack"}, {"type": "end_turn"}],
+            [{
+                "type": "end_turn",
+                "actor_id": "goblin-1",
+                "label": "Aguardar o próximo turno",
+                "description": "O Rule Engine está no turno de outro combatente.",
+                "player_input": "Aguardo o próximo turno.",
+            }],
         )
 
     def test_end_turn_emits_turn_lifecycle_events(self):
@@ -657,10 +694,8 @@ class CombatVerticalSliceTests(unittest.TestCase):
 
         self.assertEqual(result["outcome"]["current_actor_id"], "player-2")
         self.assertEqual(state["combat"]["current_actor_id"], "player-2")
-        self.assertEqual(
-            state["combat"]["available_actions"],
-            [{"type": "move"}, {"type": "attack"}, {"type": "end_turn"}],
-        )
+        self.assertEqual([action["type"] for action in state["combat"]["available_actions"]], ["move", "attack", "end_turn"])
+        self.assertTrue(all(action["actor_id"] == "player-2" for action in state["combat"]["available_actions"]))
 
     def test_end_turn_wraps_and_starts_new_round(self):
         state = {}
@@ -792,7 +827,7 @@ class CombatVerticalSliceTests(unittest.TestCase):
         combat["combatants"]["player"]["hp"] = 0
         combat["combatants"]["player"]["unconscious"] = True
 
-        self.assertEqual(api._combat_available_actions(combat), [{"type": "end_turn"}])
+        self.assertEqual(api._combat_available_actions(combat), [{"type": "end_turn", "actor_id": "player", "label": "Encerrar turno"}])
 
     def test_unconscious_actor_cannot_use_resources_without_consuming_them(self):
         state = {}
@@ -1114,10 +1149,7 @@ class CombatVerticalSliceTests(unittest.TestCase):
         player = state["combat"]["combatants"]["player"]
         player["conditions"] = [{"id": "prone"}]
 
-        self.assertIn(
-            {"type": "move"},
-            state["combat"]["available_actions"],
-        )
+        self.assertTrue(any(action["type"] == "move" for action in state["combat"]["available_actions"]))
         result = self.apply(
             state,
             {"type": "move", "actor_id": "player", "distance": 5},

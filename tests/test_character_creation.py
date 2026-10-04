@@ -158,7 +158,8 @@ class CharacterCreationTests(unittest.TestCase):
         self.assertEqual(first_turn.state["character"], created["character"])
         self.assertEqual(first_turn.state["combat"]["current_actor_id"], character_id)
         self.assertEqual(first_turn.state["combat"]["combatants"][character_id]["hp"], 11)
-        self.assertEqual(first_turn.available_actions, [{"type": "move"}, {"type": "attack"}, {"type": "second_wind"}, {"type": "end_turn"}])
+        self.assertEqual([action["type"] for action in first_turn.available_actions], ["move", "attack", "second_wind", "end_turn"])
+        self.assertTrue(all(action["actor_id"] == character_id for action in first_turn.available_actions))
         with patch.object(api, "roll_dice", side_effect=[{"rolls": [15]}, {"rolls": [5]}]):
             attack_turn = session.turn(GameTurnRequest(
                 campaign_id=created["campaign_id"], state=first_turn.state,
@@ -172,7 +173,8 @@ class CharacterCreationTests(unittest.TestCase):
         self.assertEqual(attack_turn.rule_resolution["check"]["damage"], {"dice": "1d8", "modifier": 2})
         self.assertEqual(attack_turn.rule_resolution["outcome"]["damage"], 7)
         self.assertEqual(attack_turn.state["combat"]["combatants"]["goblin"]["hp"], 5)
-        self.assertEqual(attack_turn.available_actions, [{"type": "move"}, {"type": "second_wind"}, {"type": "end_turn"}])
+        self.assertEqual([action["type"] for action in attack_turn.available_actions], ["move", "second_wind", "end_turn"])
+        self.assertTrue(all(action["actor_id"] == character_id for action in attack_turn.available_actions))
 
     def test_both_routes_reject_invalid_catalog_selections_and_forged_fields(self):
         cases = {

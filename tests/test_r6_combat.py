@@ -94,7 +94,7 @@ class R6CombatTests(unittest.TestCase):
 
     def test_action_surge_consumes_resource_and_grants_another_action(self):
         state = self.state_for(5)
-        self.assertIn({"type": "action_surge"}, state["combat"]["available_actions"])
+        self.assertIn("action_surge", [action["type"] for action in state["combat"]["available_actions"]])
         self.attack(state, (10, 1, 10, 1))
         player = state["combat"]["combatants"]["player"]
         self.assertFalse(player["action_available"])
@@ -105,10 +105,10 @@ class R6CombatTests(unittest.TestCase):
         state.update(body.state)
         self.assertEqual(result["outcome"]["resource_current"], 0)
         self.assertTrue(state["combat"]["combatants"]["player"]["action_available"])
-        self.assertIn({"type": "attack"}, state["combat"]["available_actions"])
+        self.assertIn("attack", [action["type"] for action in state["combat"]["available_actions"]])
         self.attack(state, (10, 1, 10, 1))
         self.assertFalse(state["combat"]["combatants"]["player"]["action_available"])
-        self.assertNotIn({"type": "action_surge"}, state["combat"]["available_actions"])
+        self.assertNotIn("action_surge", [action["type"] for action in state["combat"]["available_actions"]])
 
     def test_action_surge_recovery_and_no_resource_failure(self):
         state = {"character": api.character_to_state(self.character(5))}
@@ -131,7 +131,7 @@ class R6CombatTests(unittest.TestCase):
         state.update(body.state)
         player = state["combat"]["combatants"]["player"]
         self.assertEqual(player["character"]["resources"]["action_surge"]["current"], 1)
-        self.assertNotIn({"type": "action_surge"}, state["combat"]["available_actions"])
+        self.assertNotIn("action_surge", [action["type"] for action in state["combat"]["available_actions"]])
         before = deepcopy(state)
         with self.assertRaisesRegex(ValueError, "already used this turn"):
             api.resolve_request(api.ResolveRequest(
@@ -145,7 +145,7 @@ class R6CombatTests(unittest.TestCase):
             state.clear()
             state.update(end_body.state)
         self.assertEqual(state["combat"]["current_actor_id"], "player")
-        self.assertIn({"type": "action_surge"}, state["combat"]["available_actions"])
+        self.assertIn("action_surge", [action["type"] for action in state["combat"]["available_actions"]])
         second_body = api.ResolveRequest(action={"type": "action_surge", "actor_id": "player"}, state=state)
         api.resolve_request(second_body)
         self.assertEqual(second_body.state["combat"]["combatants"]["player"]["character"]["resources"]["action_surge"]["current"], 0)
@@ -185,7 +185,7 @@ class R6CombatTests(unittest.TestCase):
 
     def test_action_surge_cannot_be_client_forged_or_used_by_level_one(self):
         level_one = self.state_for(1)
-        self.assertNotIn({"type": "action_surge"}, level_one["combat"]["available_actions"])
+        self.assertNotIn("action_surge", [action["type"] for action in level_one["combat"]["available_actions"]])
         with self.assertRaises(ValueError):
             api.ResolveRequest(action={"type": "action_surge", "actor_id": "player", "action_surge": True}, state=level_one)
         with self.assertRaisesRegex(ValueError, "not available"):

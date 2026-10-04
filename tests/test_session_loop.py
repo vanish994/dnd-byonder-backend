@@ -99,7 +99,8 @@ class SessionLoopTests(unittest.TestCase):
         self.assertTrue(combat['active'])
         self.assertEqual(set(combat['combatants']), {character_id, 'goblin-scout'})
         self.assertEqual(combat['combatants']['goblin-scout']['max_hp'], 8)
-        self.assertEqual(response.available_actions, [{'type': 'move'}, {'type': 'attack'}, {'type': 'second_wind'}, {'type': 'end_turn'}])
+        self.assertEqual([action['type'] for action in response.available_actions], ['move', 'attack', 'second_wind', 'end_turn'])
+        self.assertTrue(all(action['actor_id'] == character_id for action in response.available_actions))
 
 
 if __name__ == '__main__':
