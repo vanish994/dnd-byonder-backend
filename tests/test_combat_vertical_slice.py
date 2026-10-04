@@ -1,5 +1,6 @@
 import unittest
 
+from game.contracts import GameTurnResponse
 import rule_engine.app as api
 
 
@@ -44,6 +45,29 @@ class CombatVerticalSliceTests(unittest.TestCase):
             state,
             {"type": "start_combat", "combatants": combatants or self.combatants()},
             randbelow=self.sequence(*initiative),
+        )
+
+    def apply_through_game_turn_round_trip(self, state, action, *, randbelow=None):
+        body = api.ResolveRequest(action=action, state=state)
+        resolution = api.resolve_request(body, randbelow=randbelow)
+        combat = body.state.get("combat", {})
+        public_response = GameTurnResponse(
+            campaign_id="campaign-test",
+            narration="A resolução continua.",
+            rule_resolution=resolution,
+            state=body.state,
+            available_actions=combat.get("available_actions", []),
+        )
+        serialized_response = public_response.model_dump_json()
+        restored_response = GameTurnResponse.model_validate_json(serialized_response)
+        state.clear()
+        state.update(restored_response.state)
+        return restored_response.rule_resolution
+
+    def end_turn_round_trip(self, state, actor_id):
+        return self.apply_through_game_turn_round_trip(
+            state,
+            {"type": "end_turn", "actor_id": actor_id},
         )
 
     def attack(self, state, *, d20=15, d8=4, target="goblin-1", rolls=None):
@@ -1316,12 +1340,123 @@ class CombatVerticalSliceTests(unittest.TestCase):
         self.apply(state, {"type": "end_turn", "actor_id": "player"})
 
         self.assertEqual(
-            player["conditions"][0]["_timing"],
+            state["combat"]["combatants"]["player"]["conditions"][0]["_timing"],
             {
                 "applied_round": 1,
                 "applied_turn_index": 0,
                 "applied_phase": "turn_start",
             },
+        )
+
+    def test_rounds_one_survives_application_at_beginning_middle_and_end(self):
+        scenarios = {
+            "beginning": (0, "turn_start"),
+            "middle": (1, "turn_start"),
+            "end": (1, "turn_end"),
+        }
+        for name, (application_turn_index, application_phase) in scenarios.items():
+            with self.subTest(name=name):
+                state = {}
+                self.start(state)
+                if application_turn_index == 1:
+                    self.end_turn_round_trip(state, "player")
+                player = state["combat"]["combatants"]["player"]
+                player["conditions"] = [
+                    {
+                        "id": "frightened",
+                        "duration": {"kind": "rounds", "remaining": 1},
+                        "_timing": {
+                            "applied_round": 1,
+                            "applied_turn_index": application_turn_index,
+                            "applied_phase": application_phase,
+                        },
+                    }
+                ]
+
+                if application_turn_index == 0:
+                    self.end_turn_round_trip(state, "player")
+                self.assertEqual(
+                    len(state["combat"]["combatants"]["player"]["conditions"]),
+                    1,
+                )
+                self.end_turn_round_trip(state, "goblin-1")
+                self.assertEqual(state["combat"]["round"], 2)
+                player = state["combat"]["combatants"]["player"]
+                self.assertEqual(len(player["conditions"]), 1)
+                self.assertIn("_timing", player["conditions"][0])
+
+                self.end_turn_round_trip(state, "player")
+                self.end_turn_round_trip(state, "goblin-1")
+                player = state["combat"]["combatants"]["player"]
+                self.assertEqual(player["conditions"], [])
+
+    def test_rounds_two_survives_application_at_beginning_middle_and_end(self):
+        scenarios = {
+            "beginning": (0, "turn_start"),
+            "middle": (1, "turn_start"),
+            "end": (1, "turn_end"),
+        }
+        for name, (application_turn_index, application_phase) in scenarios.items():
+            with self.subTest(name=name):
+                state = {}
+                self.start(state)
+                if application_turn_index == 1:
+                    self.end_turn_round_trip(state, "player")
+                player = state["combat"]["combatants"]["player"]
+                player["conditions"] = [
+                    {
+                        "id": "frightened",
+                        "duration": {"kind": "rounds", "remaining": 2},
+                        "_timing": {
+                            "applied_round": 1,
+                            "applied_turn_index": application_turn_index,
+                            "applied_phase": application_phase,
+                        },
+                    }
+                ]
+
+                if application_turn_index == 0:
+                    self.end_turn_round_trip(state, "player")
+                self.end_turn_round_trip(state, "goblin-1")
+                self.assertEqual(state["combat"]["round"], 2)
+                player = state["combat"]["combatants"]["player"]
+                self.assertEqual(len(player["conditions"]), 1)
+                self.assertEqual(player["conditions"][0]["duration"]["remaining"], 2)
+
+                self.end_turn_round_trip(state, "player")
+                self.end_turn_round_trip(state, "goblin-1")
+                self.assertEqual(state["combat"]["round"], 3)
+                player = state["combat"]["combatants"]["player"]
+                self.assertEqual(len(player["conditions"]), 1)
+                self.assertEqual(player["conditions"][0]["duration"]["remaining"], 1)
+
+                self.end_turn_round_trip(state, "player")
+                self.end_turn_round_trip(state, "goblin-1")
+                player = state["combat"]["combatants"]["player"]
+                self.assertEqual(player["conditions"], [])
+
+    def test_round_trip_removes_timing_when_until_condition_expires(self):
+        state = {}
+        self.start(state)
+        player = state["combat"]["combatants"]["player"]
+        player["conditions"] = [
+            {
+                "id": "poisoned",
+                "duration": {"kind": "until_end_of_turn"},
+                "_timing": {
+                    "applied_round": 1,
+                    "applied_turn_index": 0,
+                    "applied_phase": "turn_start",
+                },
+            }
+        ]
+
+        result = self.end_turn_round_trip(state, "player")
+
+        self.assertEqual(result["outcome"]["expired_conditions"], ["poisoned"])
+        self.assertEqual(
+            state["combat"]["combatants"]["player"]["conditions"],
+            [],
         )
 
 
