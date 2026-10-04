@@ -264,3 +264,20 @@ def clear_conditions_for_rest(
     creature["conditions"] = remaining
 
     return removed
+
+
+def has_disadvantage(
+    creature: dict[str, Any],
+    *,
+    roll_type: str,
+) -> bool:
+    if roll_type not in {
+        "attack",
+        "ability_check",
+    }:
+        raise ValueError(f"unknown roll type: {roll_type}")
+
+    if roll_type in {"attack", "ability_check"}:
+        return has_condition(creature, "poisoned")
+
+    return False

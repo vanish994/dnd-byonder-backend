@@ -299,6 +299,126 @@ class CombatVerticalSliceTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             api.resolve_request(body, randbelow=self.sequence(10, 10))
 
+    def test_poisoned_ability_check_uses_disadvantage(self):
+        selection = api.GuidedCharacterRequest(
+            name="Poisoned",
+            class_id="fighter",
+            level=1,
+            abilities={
+                "strength": 15,
+                "dexterity": 14,
+                "constitution": 13,
+                "intelligence": 12,
+                "wisdom": 10,
+                "charisma": 8,
+            },
+            skills=["athletics", "perception"],
+            weapon_id="longsword",
+        )
+        character = api.build_guided_character(selection)
+        state = {"character": api.character_to_state(character)}
+        state["character"]["id"] = "player"
+        self.start(state)
+        player = state["combat"]["combatants"]["player"]
+        player["conditions"] = [
+            {
+                "id": "poisoned",
+                "source_id": "test",
+                "duration": {"kind": "permanent"},
+                "effects": [],
+            }
+        ]
+
+        result = self.apply(
+            state,
+            {
+                "type": "ability_check",
+                "ability": "wisdom",
+                "dc": 10,
+                "character_id": "player",
+            },
+            randbelow=self.sequence(17, 4),
+        )
+
+        self.assertEqual(result["rolls"][0]["mode"], "disadvantage")
+        self.assertEqual(result["rolls"][0]["rolls"], [17, 4])
+        self.assertEqual(result["rolls"][0]["result"], 4)
+        self.assertEqual(result["outcome"]["total"], 4)
+
+    def test_unpoisoned_ability_check_uses_one_d20(self):
+        selection = api.GuidedCharacterRequest(
+            name="Healthy",
+            class_id="fighter",
+            level=1,
+            abilities={
+                "strength": 15,
+                "dexterity": 14,
+                "constitution": 13,
+                "intelligence": 12,
+                "wisdom": 10,
+                "charisma": 8,
+            },
+            skills=["athletics", "perception"],
+            weapon_id="longsword",
+        )
+        character = api.build_guided_character(selection)
+        state = {"character": api.character_to_state(character)}
+        state["character"]["id"] = "player"
+        self.start(state)
+
+        result = self.apply(
+            state,
+            {
+                "type": "ability_check",
+                "ability": "wisdom",
+                "dc": 10,
+                "character_id": "player",
+            },
+            randbelow=self.sequence(17),
+        )
+
+        self.assertEqual(result["rolls"], [{"type": "d20", "result": 17}])
+        self.assertEqual(result["outcome"]["total"], 17)
+
+    def test_poisoned_attack_uses_disadvantage_and_keeps_damage_resolution(self):
+        state = {}
+        self.start(state)
+        state["combat"]["combatants"]["player"]["conditions"] = [
+            {
+                "id": "poisoned",
+                "source_id": "test-effect",
+                "duration": {"kind": "permanent"},
+                "effects": [],
+            }
+        ]
+        result = self.apply(
+            state,
+            {
+                "type": "attack",
+                "actor_id": "player",
+                "target_id": "goblin-1",
+                "attack_bonus": 5,
+                "damage": {"dice": "1d8", "modifier": 3},
+            },
+            randbelow=self.sequence(19, 17, 3),
+        )
+
+        self.assertEqual(result["rolls"][0]["mode"], "disadvantage")
+        self.assertEqual(result["rolls"][0]["rolls"], [19, 17])
+        self.assertEqual(result["rolls"][0]["result"], 17)
+        self.assertTrue(result["outcome"]["hit"])
+        self.assertEqual(result["outcome"]["total"], 22)
+        self.assertEqual(result["outcome"]["damage"], 6)
+
+    def test_unpoisoned_attack_uses_normal_roll_mode(self):
+        state = {}
+        self.start(state)
+
+        result = self.attack(state, d20=17, d8=4)
+
+        self.assertEqual(result["rolls"][0], {"type": "d20", "result": 17})
+        self.assertEqual(result["outcome"]["total"], 22)
+
     def test_end_turn_expires_actor_turn_conditions(self):
         state = {}
         self.start(state)

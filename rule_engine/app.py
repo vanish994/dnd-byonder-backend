@@ -25,7 +25,10 @@ from game.orchestrator import (
     NarrationError,
     RuleResolutionError,
 )
-from rule_engine.conditions import advance_condition_durations
+from rule_engine.conditions import (
+    advance_condition_durations,
+    has_disadvantage,
+)
 from rule_engine.dice import MAX_MODIFIER, DiceExpressionError, roll_dice
 from rule_engine.character import (
     SKILL_TO_ABILITY,
@@ -815,6 +818,13 @@ def resolve_combat_attack(
         raise TypeError('resolve_combat_attack requires a validated combat attack')
     combat = _require_combat(body.state)
     actor = _require_current_actor(combat, action.actor_id)
+    attack_roll_mode = "normal"
+
+    if has_disadvantage(
+        actor,
+        roll_type="attack",
+    ):
+        attack_roll_mode = "disadvantage"
     target = combat['combatants'].get(action.target_id)
     if target is None:
         raise ValueError('target does not exist')
@@ -844,7 +854,11 @@ def resolve_combat_attack(
         target_ac=target['ac'],
         damage=damage,
     )
-    resolution = resolve_attack(ResolveRequest(action=standalone_action), randbelow=randbelow)
+    resolution = resolve_attack(
+        ResolveRequest(action=standalone_action),
+        randbelow=randbelow,
+        roll_mode=attack_roll_mode,
+    )
     actor['action_available'] = False
     damage = resolution['outcome']['damage']
     hp_before = target['hp']
@@ -988,9 +1002,42 @@ def resolve_explicit_action(
         derived_rules = [ABILITY_MODIFIER_RULE_ID, CHARACTER_RULE_ID]
     if modifier is None:
         raise ValueError('ability check requires modifier or character_id')
-    roll = roll_dice('d20', randbelow=randbelow)
-    d20_result = roll['rolls'][0]
+    condition_creature = None
+
+    if action.character_id is not None:
+        combat = body.state.get("combat")
+
+        if isinstance(combat, dict):
+            combatants = combat.get("combatants")
+
+            if isinstance(combatants, dict):
+                candidate = combatants.get(action.character_id)
+
+                if isinstance(candidate, dict):
+                    condition_creature = candidate
+
+    roll_mode = "normal"
+
+    if condition_creature is not None:
+        if has_disadvantage(
+            condition_creature,
+            roll_type="ability_check",
+        ):
+            roll_mode = "disadvantage"
+
+    if roll_mode == "normal":
+        roll = roll_dice('d20', randbelow=randbelow)
+    else:
+        roll = roll_dice(
+            'd20',
+            mode=roll_mode,
+            randbelow=randbelow,
+        )
+    d20_result = roll['selected_roll'] if roll_mode != "normal" else roll['rolls'][0]
     total = d20_result + modifier
+    roll_entry: dict[str, Any] = {'type': 'd20', 'result': d20_result}
+    if roll_mode != "normal":
+        roll_entry.update({'mode': roll_mode, 'rolls': roll['rolls']})
     return {
         'schema_version': RULE_RESOLUTION_SCHEMA_VERSION,
         'resolution_id': str(uuid.uuid4()),
@@ -1001,7 +1048,7 @@ def resolve_explicit_action(
             'dc': action.dc,
             'modifier': modifier,
         },
-        'rolls': [{'type': 'd20', 'result': d20_result}],
+        'rolls': [roll_entry],
         'outcome': {'total': total, 'success': total >= action.dc},
         'rules_used': derived_rules + [ABILITY_CHECK_RULE_ID] if derived_rules else [ABILITY_CHECK_RULE_ID],
     }
@@ -1047,19 +1094,37 @@ def resolve_attack(
     body: ResolveRequest,
     *,
     randbelow: Callable[[int], int] | None = None,
+    roll_mode: str = "normal",
 ):
     """Resolve an attack roll, including natural 20 and natural 1 classification."""
     action = body.action
     if not isinstance(action, AttackAction):
         raise TypeError('resolve_attack requires a validated attack action')
-    roll = roll_dice('d20', randbelow=randbelow)
-    d20_result = roll['rolls'][0]
+    if roll_mode not in {
+        "normal",
+        "advantage",
+        "disadvantage",
+    }:
+        raise ValueError(f"unknown roll mode: {roll_mode}")
+
+    if roll_mode == "normal":
+        roll = roll_dice('d20', randbelow=randbelow)
+    else:
+        roll = roll_dice(
+            'd20',
+            mode=roll_mode,
+            randbelow=randbelow,
+        )
+    d20_result = roll['selected_roll'] if roll_mode != "normal" else roll['rolls'][0]
     total = d20_result + action.attack_bonus
     critical = d20_result == 20
     natural_1 = d20_result == 1
     hit = True if critical else False if natural_1 else total >= action.target_ac
     damage_result = None
-    rolls = [{'type': 'd20', 'result': d20_result}]
+    attack_roll = {'type': 'd20', 'result': d20_result}
+    if roll_mode != "normal":
+        attack_roll.update({'mode': roll_mode, 'rolls': roll['rolls']})
+    rolls = [attack_roll]
     rules_used = [ATTACK_ROLL_RULE_ID]
     if hit and action.damage is not None:
         damage_roll = roll_dice(action.damage.dice, randbelow=randbelow)

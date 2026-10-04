@@ -5,6 +5,7 @@ from rule_engine.conditions import (
     advance_condition_durations,
     clear_conditions_for_rest,
     has_condition,
+    has_disadvantage,
     normalize_conditions,
     remove_condition,
     remove_condition_instance,
@@ -236,6 +237,62 @@ class ConditionTests(unittest.TestCase):
         )
 
         self.assertTrue(has_condition(creature, "poisoned"))
+
+    def test_poisoned_creature_has_attack_disadvantage(self):
+        creature = {}
+
+        add_condition(
+            creature,
+            condition_id="poisoned",
+        )
+
+        self.assertTrue(
+            has_disadvantage(
+                creature,
+                roll_type="attack",
+            )
+        )
+
+    def test_poisoned_creature_has_ability_check_disadvantage(self):
+        creature = {}
+
+        add_condition(
+            creature,
+            condition_id="poisoned",
+        )
+
+        self.assertTrue(
+            has_disadvantage(
+                creature,
+                roll_type="ability_check",
+            )
+        )
+
+    def test_unpoisoned_creature_has_no_disadvantage(self):
+        creature = {}
+
+        self.assertFalse(
+            has_disadvantage(
+                creature,
+                roll_type="attack",
+            )
+        )
+
+        self.assertFalse(
+            has_disadvantage(
+                creature,
+                roll_type="ability_check",
+            )
+        )
+
+    def test_unknown_condition_roll_type_is_rejected(self):
+        creature = {}
+
+        with self.assertRaises(ValueError):
+            has_disadvantage(
+                creature,
+                roll_type="saving_throw",
+            )
 
     def test_unknown_condition_is_rejected(self):
         creature = {}
