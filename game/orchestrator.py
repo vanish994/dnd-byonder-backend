@@ -52,9 +52,14 @@ class GameOrchestrator:
             if resolution.get("status") not in {"resolved", "needs_rule_validation"}:
                 raise RuleResolutionError("Rule Engine returned an unsupported resolution status")
 
+        scene = state.get("scene")
+        if request.action is not None and isinstance(scene, dict):
+            scene["last_action"] = request.action.get("type")
         combat = state.get("combat")
         if isinstance(combat, dict) and "available_actions" in combat:
             available_actions = deepcopy(combat["available_actions"])
+        elif isinstance(scene, dict) and isinstance(scene.get("available_actions"), list):
+            available_actions = deepcopy(scene["available_actions"])
         else:
             available_actions = deepcopy(request.available_actions)
         try:

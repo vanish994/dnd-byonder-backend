@@ -109,8 +109,10 @@ class CharacterCreationTests(unittest.TestCase):
         self.assertEqual(preview["rule_resolution"]["outcome"]["derived"], preview["derived"])
         self.assertEqual(created["derived"], preview["derived"])
         self.assertEqual(created["rule_resolution"]["action"]["character_id"], created["character"]["id"])
-        self.assertEqual(created["state"], {"character": created["character"]})
-        self.assertEqual(created["available_actions"], [])  # No combat is active yet.
+        self.assertEqual(created["state"]["character"], created["character"])
+        self.assertEqual(created["state"]["scene"]["id"], "intro")
+        self.assertEqual(created["state"]["encounter"]["id"], "intro-ambush")
+        self.assertEqual([action["type"] for action in created["available_actions"]], ["ability_check", "start_combat"])
         self.assertEqual(str(UUID(created["campaign_id"])), created["campaign_id"])
         self.assertNotEqual(created["character"]["id"], preview["character"]["id"])
 
@@ -123,7 +125,7 @@ class CharacterCreationTests(unittest.TestCase):
         ))
         self.assertEqual(first_turn.campaign_id, created["campaign_id"])
         self.assertEqual(first_turn.state, created["state"])
-        self.assertEqual(first_turn.available_actions, [])
+        self.assertEqual(first_turn.available_actions, created["available_actions"])
         self.assertEqual(first_turn.rule_resolution["schema_version"], "rule-resolution-v1")
         self.assertEqual(first_turn.rule_resolution["status"], "needs_rule_validation")
         self.assertEqual(first_turn.narration, "A aventura começa.")

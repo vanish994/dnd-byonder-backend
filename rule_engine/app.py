@@ -67,6 +67,9 @@ WEAPON_ATTACK_RULE_ID = 'weapon_attack.v1'
 WEAPON_DAMAGE_RULE_ID = 'weapon_damage.v1'
 CHARACTER_RULE_ID = 'character.v1'
 RULE_RESOLUTION_SCHEMA_VERSION = 'rule-resolution-v1'
+INITIAL_SCENE_ID = 'intro'
+INITIAL_ENCOUNTER_ID = 'intro-ambush'
+ACTION_PRESENTATION_FIELDS = {'label', 'description', 'player_input'}
 TextAction = constr(strict=True, min_length=1, max_length=200)
 
 
@@ -168,7 +171,16 @@ class CombatantSpec(BaseModel):
 
 class StartCombatAction(BaseModel):
     type: Literal['start_combat']
-    combatants: list[CombatantSpec] = Field(min_length=2)
+    combatants: list[CombatantSpec] | None = Field(default=None, min_length=2)
+    encounter_id: StrictStr | None = Field(default=None, min_length=1, max_length=64)
+
+    @model_validator(mode='after')
+    def validate_source(self):
+        if self.combatants is None and self.encounter_id is None:
+            raise ValueError('start combat requires combatants or encounter_id')
+        if self.combatants is not None and self.encounter_id is not None:
+            raise ValueError('start combat cannot mix combatants and encounter_id')
+        return self
 
     class Config:
         extra = 'forbid'
@@ -340,6 +352,54 @@ def get_character_options(x_api_key: str | None = Header(default=None)):
     return character_options()
 
 
+def _initial_scene_actions(character_id: str) -> list[dict[str, Any]]:
+    return [
+        {
+            'type': 'ability_check',
+            'ability': 'wisdom',
+            'dc': 10,
+            'character_id': character_id,
+            'label': 'Observar a clareira',
+            'description': 'Procure sinais, sons e detalhes importantes ao redor.',
+            'player_input': 'Observo cuidadosamente a clareira.',
+        },
+        {
+            'type': 'start_combat',
+            'encounter_id': INITIAL_ENCOUNTER_ID,
+            'label': 'Investigar o ruído',
+            'description': 'Siga o som entre as árvores e prepare-se para o perigo.',
+            'player_input': 'Investigo o ruído entre as árvores.',
+        },
+    ]
+
+
+def _initial_encounter() -> dict[str, Any]:
+    return {
+        'id': INITIAL_ENCOUNTER_ID,
+        'enemy': {
+            'id': 'goblin-scout',
+            'name': 'Batedor goblin',
+            'hp': 8,
+            'max_hp': 8,
+            'ac': 12,
+            'initiative_modifier': 1,
+            'position': 5,
+            'movement_speed': 30,
+            'side': 'enemy',
+        },
+    }
+
+
+def _initial_scene(character_id: str) -> dict[str, Any]:
+    return {
+        'id': INITIAL_SCENE_ID,
+        'type': 'exploration',
+        'title': 'A clareira silenciosa',
+        'description': 'A estrada termina em uma clareira. Um ruído se move entre as árvores.',
+        'available_actions': _initial_scene_actions(character_id),
+    }
+
+
 def _guided_character_preview(body: GuidedCharacterRequest) -> tuple[dict[str, Any], dict[str, Any]]:
     try:
         character = build_guided_character(body)
@@ -367,19 +427,51 @@ def validate_character(body: GuidedCharacterRequest, x_api_key: str | None = Hea
 def create_character(body: GuidedCharacterRequest, x_api_key: str | None = Header(default=None)):
     authorize(x_api_key)
     preview, state = _guided_character_preview(body)
+    character_id = preview['character']['id']
+    scene = _initial_scene(character_id)
+    state['scene'] = scene
+    state['encounter'] = _initial_encounter()
     return {
         **preview,
         'campaign_id': str(uuid.uuid4()),
         'state': state,
-        # The orchestrator has no non-combat structured actions until a scene starts.
-        'available_actions': [],
+        'available_actions': scene['available_actions'],
     }
 
 
 def resolve_game_action(action: dict[str, Any], state: dict[str, Any]) -> dict[str, Any]:
     """Validate and resolve a structured action using the existing Rule Engine."""
+    mechanical_action = {
+        key: value for key, value in action.items()
+        if key not in ACTION_PRESENTATION_FIELDS
+    }
+    if mechanical_action.get('type') == 'start_combat' and mechanical_action.get('encounter_id'):
+        encounter = state.get('encounter')
+        if not isinstance(encounter, dict) or encounter.get('id') != mechanical_action['encounter_id']:
+            raise ValueError('unknown encounter')
+        character = state.get('character')
+        enemy = encounter.get('enemy')
+        if not isinstance(character, dict) or not isinstance(enemy, dict):
+            raise ValueError('encounter is incomplete')
+        mechanical_action = {
+            **mechanical_action,
+            'combatants': [
+                {'id': character['id'], 'character': character, 'side': 'player'},
+                {
+                    'id': enemy['id'],
+                    'hp': enemy['hp'],
+                    'max_hp': enemy['max_hp'],
+                    'ac': enemy['ac'],
+                    'initiative_modifier': enemy['initiative_modifier'],
+                    'position': enemy['position'],
+                    'movement_speed': enemy['movement_speed'],
+                    'side': enemy['side'],
+                },
+            ],
+        }
+        mechanical_action.pop('encounter_id', None)
     try:
-        body = ResolveRequest(action=action, state=state)
+        body = ResolveRequest(action=mechanical_action, state=state)
     except ValidationError as exc:
         raise ValueError('invalid structured action') from exc
     resolution = resolve_request(body)
