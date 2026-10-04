@@ -46,7 +46,7 @@ class CombatVerticalSliceTests(unittest.TestCase):
             randbelow=self.sequence(*initiative),
         )
 
-    def attack(self, state, *, d20=15, d8=4, target="goblin-1"):
+    def attack(self, state, *, d20=15, d8=4, target="goblin-1", rolls=None):
         return self.apply(
             state,
             {
@@ -56,7 +56,7 @@ class CombatVerticalSliceTests(unittest.TestCase):
                 "attack_bonus": 5,
                 "damage": {"dice": "1d8", "modifier": 3},
             },
-            randbelow=self.sequence(d20, d8),
+            randbelow=self.sequence(*(rolls or (d20, d8))),
         )
 
     def test_start_combat_creates_state_and_resources(self):
@@ -590,6 +590,166 @@ class CombatVerticalSliceTests(unittest.TestCase):
 
         self.assertEqual(result["rolls"][0], {"type": "d20", "result": 17})
         self.assertEqual(result["outcome"]["total"], 22)
+
+    def test_restrained_blocks_movement_and_resets_to_zero_next_turn(self):
+        state = {}
+        self.start(state)
+        player = state["combat"]["combatants"]["player"]
+        player["conditions"] = [{"id": "restrained"}]
+        state["combat"]["available_actions"] = api._combat_available_actions(state["combat"])
+
+        self.assertNotIn({"type": "move"}, state["combat"]["available_actions"])
+        with self.assertRaises(ValueError):
+            self.apply(
+                state,
+                {"type": "move", "actor_id": "player", "distance": 1},
+            )
+
+        self.apply(state, {"type": "end_turn", "actor_id": "player"})
+        self.apply(state, {"type": "end_turn", "actor_id": "goblin-1"})
+        self.assertEqual(player["movement_remaining"], 0)
+
+    def test_restrained_attack_is_disadvantage(self):
+        state = {}
+        self.start(state)
+        state["combat"]["combatants"]["player"]["conditions"] = [
+            {"id": "restrained"}
+        ]
+
+        result = self.attack(state, rolls=(19, 17, 3))
+
+        self.assertEqual(result["rolls"][0]["mode"], "disadvantage")
+        self.assertEqual(result["rolls"][0]["rolls"], [19, 17])
+        self.assertEqual(result["rolls"][0]["result"], 17)
+
+    def test_attack_against_restrained_is_advantage(self):
+        state = {}
+        self.start(state)
+        state["combat"]["combatants"]["goblin-1"]["conditions"] = [
+            {"id": "restrained"}
+        ]
+
+        result = self.attack(state, rolls=(2, 17, 3))
+
+        self.assertEqual(result["rolls"][0]["mode"], "advantage")
+        self.assertEqual(result["rolls"][0]["rolls"], [2, 17])
+        self.assertEqual(result["rolls"][0]["result"], 17)
+
+    def test_restrained_dexterity_save_is_disadvantage(self):
+        selection = api.GuidedCharacterRequest(
+            name="Restrained",
+            class_id="fighter",
+            level=1,
+            abilities={
+                "strength": 15,
+                "dexterity": 14,
+                "constitution": 13,
+                "intelligence": 12,
+                "wisdom": 10,
+                "charisma": 8,
+            },
+            skills=["athletics", "perception"],
+            weapon_id="longsword",
+        )
+        character = api.build_guided_character(selection)
+        state = {"character": api.character_to_state(character)}
+        state["character"]["id"] = "player"
+        self.start(state)
+        state["combat"]["combatants"]["player"]["conditions"] = [
+            {"id": "restrained"}
+        ]
+
+        result = self.apply(
+            state,
+            {
+                "type": "saving_throw",
+                "ability": "dexterity",
+                "dc": 10,
+                "character_id": "player",
+            },
+            randbelow=self.sequence(19, 3),
+        )
+
+        self.assertEqual(result["rolls"][0]["mode"], "disadvantage")
+        self.assertEqual(result["rolls"][0]["rolls"], [19, 3])
+        self.assertEqual(result["rolls"][0]["result"], 3)
+
+    def test_restrained_strength_save_is_not_disadvantage(self):
+        selection = api.GuidedCharacterRequest(
+            name="Restrained",
+            class_id="fighter",
+            level=1,
+            abilities={
+                "strength": 15,
+                "dexterity": 14,
+                "constitution": 13,
+                "intelligence": 12,
+                "wisdom": 10,
+                "charisma": 8,
+            },
+            skills=["athletics", "perception"],
+            weapon_id="longsword",
+        )
+        character = api.build_guided_character(selection)
+        state = {"character": api.character_to_state(character)}
+        state["character"]["id"] = "player"
+        self.start(state)
+        state["combat"]["combatants"]["player"]["conditions"] = [
+            {"id": "restrained"}
+        ]
+
+        result = self.apply(
+            state,
+            {
+                "type": "saving_throw",
+                "ability": "strength",
+                "dc": 10,
+                "character_id": "player",
+            },
+            randbelow=self.sequence(19),
+        )
+
+        self.assertEqual(result["rolls"], [{"type": "d20", "result": 19}])
+
+    def test_restrained_and_poisoned_do_not_stack_disadvantage(self):
+        state = {}
+        self.start(state)
+        state["combat"]["combatants"]["player"]["conditions"] = [
+            {"id": "restrained"},
+            {"id": "poisoned"},
+        ]
+
+        result = self.attack(state, rolls=(19, 17, 3))
+
+        self.assertEqual(result["rolls"][0]["mode"], "disadvantage")
+        self.assertEqual(result["rolls"][0]["rolls"], [19, 17])
+
+    def test_restrained_with_prone_target_keeps_single_advantage(self):
+        state = {}
+        self.start(state)
+        state["combat"]["combatants"]["goblin-1"]["conditions"] = [
+            {"id": "restrained"},
+            {"id": "prone"},
+        ]
+
+        result = self.attack(state, rolls=(2, 17, 3))
+
+        self.assertEqual(result["rolls"][0]["mode"], "advantage")
+        self.assertEqual(result["rolls"][0]["rolls"], [2, 17])
+
+    def test_removing_restrained_restores_movement(self):
+        state = {}
+        self.start(state)
+        player = state["combat"]["combatants"]["player"]
+        player["conditions"] = [{"id": "restrained"}]
+        player["conditions"] = []
+
+        result = self.apply(
+            state,
+            {"type": "move", "actor_id": "player", "distance": 5},
+        )
+
+        self.assertEqual(result["outcome"]["movement_remaining"], 25)
 
     def test_end_turn_expires_actor_turn_conditions(self):
         state = {}

@@ -277,7 +277,10 @@ def has_disadvantage(
     }:
         raise ValueError(f"unknown roll type: {roll_type}")
 
-    if roll_type in {"attack", "ability_check"}:
+    if roll_type == "attack":
+        return has_condition(creature, "poisoned") or has_condition(creature, "restrained")
+
+    if roll_type == "ability_check":
         return has_condition(creature, "poisoned")
 
     return False

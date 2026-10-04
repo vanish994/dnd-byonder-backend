@@ -574,7 +574,9 @@ def _combat_available_actions(combat: dict[str, Any]) -> list[dict[str, str]]:
     if has_condition(actor, 'prone'):
         stand_cost = actor.get('movement_speed', 0) // 2
         movement_available = actor.get('movement_remaining', 0) >= stand_cost
-    if movement_available and not has_condition(actor, 'grappled'):
+    if movement_available and not (
+        has_condition(actor, 'grappled') or has_condition(actor, 'restrained')
+    ):
         actions.append({'type': 'move'})
     if actor.get('action_available'):
         actions.append({'type': 'attack'})
@@ -797,8 +799,10 @@ def resolve_move(body: ResolveRequest) -> dict[str, Any]:
     actor = _require_current_actor(combat, action.actor_id)
     if actor.get('unconscious'):
         raise ValueError('unconscious actor cannot move')
-    if action.distance > 0 and has_condition(actor, 'grappled'):
-        raise ValueError('grappled actor cannot move')
+    if action.distance > 0 and (
+        has_condition(actor, 'grappled') or has_condition(actor, 'restrained')
+    ):
+        raise ValueError('conditioned actor cannot move')
     prone = has_condition(actor, 'prone')
     stand_cost = 0
     if prone:
@@ -837,13 +841,6 @@ def resolve_combat_attack(
         raise TypeError('resolve_combat_attack requires a validated combat attack')
     combat = _require_combat(body.state)
     actor = _require_current_actor(combat, action.actor_id)
-    attack_roll_mode = "normal"
-
-    if has_disadvantage(
-        actor,
-        roll_type="attack",
-    ):
-        attack_roll_mode = "disadvantage"
     target = combat['combatants'].get(action.target_id)
     if target is None:
         raise ValueError('target does not exist')
@@ -853,6 +850,14 @@ def resolve_combat_attack(
         raise ValueError('unconscious target is invalid')
     if not actor.get('action_available'):
         raise ValueError('action is already consumed')
+    attacker_disadvantage = has_disadvantage(actor, roll_type='attack')
+    target_advantage = has_condition(target, 'restrained')
+    if target_advantage and not attacker_disadvantage:
+        attack_roll_mode = 'advantage'
+    elif attacker_disadvantage and not target_advantage:
+        attack_roll_mode = 'disadvantage'
+    else:
+        attack_roll_mode = 'normal'
     derived_rules: list[str] = []
     if action.weapon_id is not None:
         character, derived = _character_for_combatant(body.state, actor)
@@ -954,7 +959,7 @@ def resolve_end_turn(body: ResolveRequest) -> dict[str, Any]:
     next_actor['reaction_available'] = True
     next_actor['movement_remaining'] = (
         0
-        if has_condition(next_actor, 'grappled')
+        if has_condition(next_actor, 'grappled') or has_condition(next_actor, 'restrained')
         else next_actor['movement_speed']
     )
     combat['available_actions'] = _combat_available_actions(combat)
@@ -1094,8 +1099,21 @@ def resolve_saving_throw(
         derived_rules = [SAVING_THROW_DERIVED_RULE_ID, ABILITY_MODIFIER_RULE_ID, PROFICIENCY_BONUS_RULE_ID]
     if modifier is None:
         raise ValueError('saving throw requires modifier or character_id')
-    roll = roll_dice('d20', randbelow=randbelow)
-    d20_result = roll['rolls'][0]
+    roll_mode = 'normal'
+    if action.ability == 'dexterity' and action.character_id:
+        combat = body.state.get('combat', {})
+        combatants = combat.get('combatants', {}) if isinstance(combat, dict) else {}
+        combatant = combatants.get(action.character_id) if isinstance(combatants, dict) else None
+        if isinstance(combatant, dict) and has_condition(combatant, 'restrained'):
+            roll_mode = 'disadvantage'
+    if roll_mode == 'normal':
+        roll = roll_dice('d20', randbelow=randbelow)
+    else:
+        roll = roll_dice('d20', randbelow=randbelow, mode=roll_mode)
+    d20_result = roll['selected_roll'] if roll_mode != 'normal' else roll['rolls'][0]
+    roll_entry = {'type': 'd20', 'result': d20_result}
+    if roll_mode != 'normal':
+        roll_entry.update({'mode': roll_mode, 'rolls': roll['rolls']})
     total = d20_result + modifier
     return {
         'schema_version': RULE_RESOLUTION_SCHEMA_VERSION,
@@ -1107,7 +1125,7 @@ def resolve_saving_throw(
             'dc': action.dc,
             'modifier': modifier,
         },
-        'rolls': [{'type': 'd20', 'result': d20_result}],
+        'rolls': [roll_entry],
         'outcome': {'total': total, 'success': total >= action.dc},
         'rules_used': derived_rules + [SAVING_THROW_RULE_ID] if derived_rules else [SAVING_THROW_RULE_ID],
     }
