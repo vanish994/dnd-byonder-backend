@@ -61,11 +61,11 @@ class StrictSourcePolicyTests(unittest.TestCase):
         return {row[0] for row in self.db.execute(sql, args)}
 
     def test_default_search_is_strict_and_uses_canonical_duplicate(self):
-        self.assertEqual(self.search_ids(), {"dmg-2024", "phb-2024", "mm-2025"})
+        self.assertEqual(self.search_ids(), {"dmg-2024", "phb-2024"})
 
     def test_requested_edition_can_narrow_but_not_expand_scope(self):
         self.assertEqual(self.search_ids("2024"), {"dmg-2024", "phb-2024"})
-        self.assertEqual(self.search_ids("2025"), {"mm-2025"})
+        self.assertEqual(self.search_ids("2025"), set())
         self.assertEqual(self.search_ids("2014"), set())
         self.assertEqual(self.search_ids("not explicit"), set())
 
