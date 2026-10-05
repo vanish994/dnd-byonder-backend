@@ -439,7 +439,7 @@ def health():
     return {
         'status': 'ok',
         'edition_scope': list(STRICT_EDITION_SCOPE),
-        'source_policy': 'explicit 2024/2025 only; canonical source preferred for duplicate titles',
+        'source_policy': 'explicit D&D 2024/PHB 2024 only; canonical source preferred for duplicate titles',
         'documents': documents,
         'chunks': chunks,
     }
@@ -475,7 +475,7 @@ def search(body: SearchRequest, x_api_key: str | None = Header(default=None)):
             'query': body.query,
             'count': len(rows),
             'results': [serialize(r) for r in rows],
-            'source_policy': 'explicit 2024/2025 only; canonical source preferred for duplicate titles; candidates require validation',
+            'source_policy': 'explicit D&D 2024/PHB 2024 only; canonical source preferred for duplicate titles; candidates require validation',
         }
     finally:
         con.close()

@@ -83,9 +83,9 @@ class RuleEngineApiTests(unittest.TestCase):
         result = api.search(api.SearchRequest(query="concentration", limit=30), "test-secret")
         source_ids = {item["source_id"] for item in result["results"]}
         editions = {item["edition"] for item in result["results"]}
-        self.assertEqual(source_ids, {"dmg-2024", "phb-2024", "mm-2025"})
-        self.assertEqual(editions, {"2024", "2025"})
-        self.assertIn("explicit 2024/2025 only", result["source_policy"])
+        self.assertEqual(source_ids, {"dmg-2024", "phb-2024"})
+        self.assertEqual(editions, {"2024"})
+        self.assertIn("explicit D&D 2024/PHB 2024 only", result["source_policy"])
 
     def test_search_cannot_be_expanded_to_2014(self):
         result = api.search(
@@ -96,7 +96,7 @@ class RuleEngineApiTests(unittest.TestCase):
 
     def test_health_reports_live_search_scope(self):
         result = api.health()
-        self.assertEqual(result["edition_scope"], ["2024", "2025"])
+        self.assertEqual(result["edition_scope"], ["2024"])
         self.assertEqual(result["documents"], 6)
 
     @staticmethod
