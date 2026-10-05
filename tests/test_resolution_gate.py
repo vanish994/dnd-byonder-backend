@@ -1,8 +1,6 @@
-import json
 import unittest
-from unittest.mock import Mock, patch
-
-import httpx
+from types import SimpleNamespace
+from unittest.mock import Mock
 
 from game.orchestrator import GameOrchestrator
 from game.resolution_gate import ResolutionGateDecision
@@ -27,20 +25,13 @@ class ResolutionGateTests(unittest.TestCase):
             })
 
     def test_gemini_interpreter_requires_structured_json(self):
-        captured = {}
-
-        def handler(request):
-            captured["body"] = json.loads(request.content)
-            return httpx.Response(200, json={"candidates": [{"content": {"parts": [{"text": json.dumps({
-                "schema_version": "resolution-gate-v1",
-                "requires_resolution": True,
-                "resolution": {"type": "skill_check", "skill": "stealth"},
-            })}]}}]})
+        models = Mock()
+        models.generate_content.return_value = SimpleNamespace(text='{"schema_version":"resolution-gate-v1","requires_resolution":true,"resolution":{"type":"skill_check","skill":"stealth"}}')
 
         interpreter = GeminiMJClient(
             api_key="gemini-secret",
             model="gemini-test",
-            transport=httpx.MockTransport(handler),
+            client=SimpleNamespace(models=models),
         )
         result = interpreter.interpret(
             campaign_id="campaign",
@@ -50,8 +41,9 @@ class ResolutionGateTests(unittest.TestCase):
         self.assertEqual(result["schema_version"], "resolution-gate-v1")
         self.assertTrue(result["requires_resolution"])
         self.assertEqual(result["resolution"], {"type": "skill_check", "skill": "stealth"})
-        self.assertEqual(captured["body"]["generationConfig"]["responseMimeType"], "application/json")
-        self.assertIn("responseSchema", captured["body"]["generationConfig"])
+        config = models.generate_content.call_args.kwargs["config"]
+        self.assertEqual(config.response_mime_type, "application/json")
+        self.assertIn("response_json_schema", config.__dict__)
         self.assertNotIn("dc", result["resolution"])
         self.assertNotIn("success", result)
         self.assertNotIn("hp", result)
@@ -60,9 +52,7 @@ class ResolutionGateTests(unittest.TestCase):
         interpreter = GeminiMJClient(
             api_key="gemini-secret",
             model="gemini-test",
-            transport=httpx.MockTransport(lambda _request: httpx.Response(
-                200, json={"candidates": [{"content": {"parts": [{"text": '{"success":true}'}]}}]}
-            )),
+            client=SimpleNamespace(models=SimpleNamespace(generate_content=Mock(return_value=SimpleNamespace(text='{"success":true}')))),
         )
         with self.assertRaises(GeminiMJError):
             interpreter.interpret(campaign_id="c", state={}, player_input="x")

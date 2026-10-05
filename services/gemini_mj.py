@@ -5,9 +5,9 @@ import logging
 import re
 import time
 from typing import Any
-from urllib.parse import quote
 
-import httpx
+from google import genai
+from google.genai import types
 
 from game.resolution_gate import ResolutionGateDecision
 from game.narrator import build_narrative_context
@@ -31,7 +31,8 @@ Nunca produza HP, dano, ouro, CD, modificador, total, sucesso, falha ou estado.
 Responda somente conforme o JSON Schema fornecido. Quando não houver incerteza
 ou consequência relevante, requires_resolution deve ser false. Quando houver,
 use skill_check ou ability_check e indique apenas a perícia ou habilidade.
-O Backend e o Rule Engine determinam toda a mecânica restante.
+O Backend e o Rule Engine determinam toda a mecânica restante. Em skill_check,
+não inclua ability; em ability_check, não inclua skill.
 """.strip()
 
 NARRATIVE_SYSTEM_INSTRUCTION = """
@@ -73,9 +74,7 @@ RESOLUTION_GATE_RESPONSE_SCHEMA = {
 
 def _safe_error_detail(exc: Exception) -> str:
     detail = str(exc).replace("\n", " ")[:240]
-    detail = re.sub(r"(?i)(api[_ -]?key|key)\s*[:=]\s*\S+", r"\1=[REDACTED]", detail)
-    detail = re.sub(r"AIza[0-9A-Za-z_-]+", "[REDACTED]", detail)
-    return detail
+    return re.sub(r"(?i)(api[_ -]?key|key)\s*[:=]\s*\S+", r"\1=[REDACTED]", detail)
 
 
 def _parse_gate_decision(text: str) -> ResolutionGateDecision:
@@ -103,7 +102,7 @@ class GeminiMJClient:
         timeout_seconds: float = 20.0,
         max_output_tokens: int = 512,
         temperature: float = 0.7,
-        transport: httpx.BaseTransport | None = None,
+        client: Any | None = None,
     ) -> None:
         if not api_key.strip() or not model.strip() or not base_url.strip():
             raise ValueError("Gemini API key, model and base URL are required")
@@ -112,10 +111,10 @@ class GeminiMJClient:
         self.api_key = api_key
         self.model = model.removeprefix("models/")
         self.base_url = base_url.rstrip("/")
-        self.timeout = httpx.Timeout(timeout_seconds)
+        self.timeout_seconds = timeout_seconds
         self.max_output_tokens = max_output_tokens
         self.temperature = temperature
-        self.transport = transport
+        self.client = client or genai.Client(api_key=api_key)
 
     def _generate(
         self,
@@ -125,31 +124,28 @@ class GeminiMJClient:
         response_schema: dict[str, Any] | None = None,
         request_id: str | None = None,
     ) -> str:
-        generation_config: dict[str, Any] = {
+        config_kwargs: dict[str, Any] = {
+            "system_instruction": system_instruction,
             "temperature": self.temperature,
-            "maxOutputTokens": self.max_output_tokens,
+            "max_output_tokens": self.max_output_tokens,
         }
         if response_schema is not None:
-            generation_config.update({
-                "responseMimeType": "application/json",
-                "responseSchema": response_schema,
+            config_kwargs.update({
+                "response_mime_type": "application/json",
+                "response_json_schema": response_schema,
             })
-        payload = {
-            "systemInstruction": {"parts": [{"text": system_instruction}]},
-            "contents": [{"role": "user", "parts": [{"text": content}]}],
-            "generationConfig": generation_config,
-        }
-        url = f"{self.base_url}/models/{quote(self.model, safe='')}:generateContent"
         started = time.perf_counter()
         try:
-            with httpx.Client(timeout=self.timeout, transport=self.transport) as client:
-                response = client.post(url, params={"key": self.api_key}, json=payload)
-                response.raise_for_status()
-                body = response.json()
-            text = body["candidates"][0]["content"]["parts"][0]["text"]
-        except (httpx.HTTPError, ValueError, KeyError, IndexError, TypeError) as exc:
+            response = self.client.models.generate_content(
+                model=self.model,
+                contents=content,
+                config=types.GenerateContentConfig(**config_kwargs),
+            )
+            text = response.text
+        except Exception as exc:
             logger.warning(
-                "GEMINI_REQUEST_FAILED duration_ms=%.1f error_type=%s error_detail=%s request_id=%s",
+                "GEMINI_REQUEST_FAILED model=%s duration_ms=%.1f error_type=%s error_detail=%s request_id=%s",
+                self.model,
                 (time.perf_counter() - started) * 1000,
                 type(exc).__name__,
                 _safe_error_detail(exc),
@@ -194,7 +190,7 @@ class GeminiMJClient:
         )
         try:
             return _parse_gate_decision(text).model_dump(mode="json", exclude_none=True)
-        except ValueError as exc:
+        except (ValueError, TypeError) as exc:
             raise GeminiMJError("Gemini returned an invalid resolution gate") from exc
 
     def narrate(

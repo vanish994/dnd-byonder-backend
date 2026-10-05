@@ -1,48 +1,45 @@
-import json
 import unittest
-
-import httpx
+from types import SimpleNamespace
+from unittest.mock import Mock
 
 from services.gemini_mj import GeminiMJClient, GeminiMJError
 
 
 class GeminiMJTests(unittest.TestCase):
-    def make_client(self, handler):
+    def make_client(self, response=None, error=None):
+        models = Mock()
+        if error is not None:
+            models.generate_content.side_effect = error
+        else:
+            models.generate_content.return_value = response
         return GeminiMJClient(
             api_key="gemini-secret",
             model="gemini-test",
             timeout_seconds=2,
-            transport=httpx.MockTransport(handler),
-        )
+            client=SimpleNamespace(models=models),
+        ), models
 
     def test_interpret_uses_generate_content_json_schema(self):
-        captured = {}
+        response = SimpleNamespace(text='{"schema_version":"resolution-gate-v1","requires_resolution":true,"resolution":{"type":"skill_check","skill":"stealth"}}')
+        client, models = self.make_client(response=response)
 
-        def handler(request):
-            captured["url"] = str(request.url)
-            captured["body"] = json.loads(request.content)
-            return httpx.Response(200, json={"candidates": [{"content": {"parts": [{"text": json.dumps({
-                "schema_version": "resolution-gate-v1",
-                "requires_resolution": True,
-                "resolution": {"type": "skill_check", "skill": "stealth"},
-            })}]}}]})
-
-        result = self.make_client(handler).interpret(
+        result = client.interpret(
             campaign_id="campaign",
             state={"scene": {"type": "exploration"}},
             player_input="Passo furtivamente pelo guarda.",
         )
-        self.assertIn("models/gemini-test:generateContent", captured["url"])
-        self.assertEqual(captured["body"]["generationConfig"]["responseMimeType"], "application/json")
-        self.assertIn("responseSchema", captured["body"]["generationConfig"])
+
+        models.generate_content.assert_called_once()
+        call = models.generate_content.call_args.kwargs
+        self.assertEqual(call["model"], "gemini-test")
+        self.assertEqual(call["config"].response_mime_type, "application/json")
+        self.assertIn("response_json_schema", call["config"].__dict__)
         self.assertEqual(result["resolution"], {"type": "skill_check", "skill": "stealth"})
         self.assertNotIn("dc", result)
         self.assertNotIn("success", result)
 
     def test_narrate_returns_text_only(self):
-        client = self.make_client(lambda request: httpx.Response(
-            200, json={"candidates": [{"content": {"parts": [{"text": "Você avança em silêncio."}]}}]}
-        ))
+        client, _ = self.make_client(response=SimpleNamespace(text="Você avança em silêncio."))
         result = client.narrate(
             campaign_id="campaign",
             state={"scene": {"type": "exploration"}},
@@ -52,14 +49,12 @@ class GeminiMJTests(unittest.TestCase):
         self.assertEqual(result, "Você avança em silêncio.")
 
     def test_invalid_response_fails_closed(self):
-        client = self.make_client(lambda request: httpx.Response(
-            200, json={"candidates": [{"content": {"parts": [{"text": '{"success":true}' }]}}]}
-        ))
+        client, _ = self.make_client(response=SimpleNamespace(text='{"success":true}'))
         with self.assertRaises(GeminiMJError):
             client.interpret(campaign_id="campaign", state={}, player_input="x")
 
-    def test_api_error_is_redacted_and_fails_closed(self):
-        client = self.make_client(lambda request: httpx.Response(429, text="key=AIza-secret"))
+    def test_api_error_fails_closed(self):
+        client, _ = self.make_client(error=RuntimeError("key=AIza-secret"))
         with self.assertRaises(GeminiMJError):
             client.narrate(
                 campaign_id="campaign", state={}, player_input="x",
