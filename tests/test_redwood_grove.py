@@ -112,3 +112,19 @@ class RedwoodGroveTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_adventure_catalog_and_bootstrap_are_server_owned():
+    from game.adventure_catalog import get_adventure, list_adventures
+
+    catalog = list_adventures()
+    adventure = get_adventure('dragon-delves-death-at-sunset')
+    assert catalog['schema_version'] == 'adventure-catalog-v1'
+    assert catalog['ruleset'] == 'dnd-2024-phb'
+    assert adventure['initial_scene_id'] == 'redwood-watch'
+    scene = api._redwood_watch_scene('character-1')
+    state = api._adventure_state(adventure, scene)
+    assert state['scene_id'] == 'redwood-watch'
+    assert state['objective'] == 'Investigar a corrupção e os desaparecimentos.'
+    assert scene['available_actions'][0]['skill'] == 'persuasion'
+    assert scene['available_actions'][0]['dc'] == 12

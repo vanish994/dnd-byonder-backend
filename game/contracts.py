@@ -33,6 +33,7 @@ class PHB2024GuidedCharacterRequest(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
     name: StrictStr = Field(min_length=1, max_length=64)
+    adventure_id: StrictStr = 'dragon-delves-death-at-sunset'
     class_id: StrictStr
     level: StrictInt = 1
     species_id: StrictStr

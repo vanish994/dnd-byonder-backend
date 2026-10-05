@@ -25,6 +25,7 @@ from game.contracts import (
     SessionResumeResponse,
     SessionTurnRequest,
 )
+from game.adventure_catalog import REDWOOD_ADVENTURE_ID, get_adventure, list_adventures
 from game.orchestrator import (
     GameOrchestrator,
     InvalidGameAction,
@@ -595,6 +596,41 @@ def _redwood_grove_scene(character_id: str) -> dict[str, Any]:
     }
 
 
+def _redwood_watch_scene(character_id: str) -> dict[str, Any]:
+    """Return the compact, server-owned entry snapshot for the adventure."""
+    return {
+        'id': 'redwood-watch',
+        'type': 'exploration',
+        'title': 'Redwood Watch',
+        'available_actions': [
+            {
+                'type': 'skill_check',
+                'skill': 'persuasion',
+                'dc': 12,
+                'character_id': character_id,
+                'label': 'Convencer Kaynen',
+                'description': 'Tente convencer Kaynen a permitir a investigação.',
+                'player_input': 'Tento convencer Kaynen a permitir a investigação.',
+            },
+        ],
+    }
+
+
+def _adventure_state(adventure: dict[str, Any], scene: dict[str, Any]) -> dict[str, Any]:
+    return {
+        'id': adventure['id'],
+        'title': adventure['title'],
+        'source': adventure['source'],
+        'objective': 'Investigar a corrupção e os desaparecimentos.',
+        'scene_id': scene['id'],
+        'known_facts': ['A investigação começa na Redwood Watch.'],
+        'discoveries': [],
+        'npcs': ['kaynen'],
+        'threats': [],
+        'mechanical_context': {'ruleset': 'dnd-2024-phb'},
+    }
+
+
 def _guided_character_preview(body: GuidedCharacterRequest) -> tuple[dict[str, Any], dict[str, Any]]:
     try:
         character = build_guided_character(body)
@@ -640,6 +676,12 @@ def get_phb2024_character_options(x_api_key: str | None = Header(default=None)):
     return character_options_phb2024()
 
 
+@app.get('/v2/adventures')
+def get_adventure_catalog(x_api_key: str | None = Header(default=None)):
+    authorize(x_api_key)
+    return list_adventures()
+
+
 def _phb2024_character_preview(body: PHB2024GuidedCharacterRequest) -> tuple[dict[str, Any], dict[str, Any]]:
     try:
         character = build_phb2024_character(body)
@@ -660,6 +702,10 @@ def _phb2024_character_preview(body: PHB2024GuidedCharacterRequest) -> tuple[dic
 @app.post('/v2/character/validate')
 def validate_phb2024_character(body: PHB2024GuidedCharacterRequest, x_api_key: str | None = Header(default=None)):
     authorize(x_api_key)
+    try:
+        get_adventure(getattr(body, 'adventure_id', REDWOOD_ADVENTURE_ID))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail='adventure is not available in the server-owned catalog') from exc
     preview, _state = _phb2024_character_preview(body)
     return preview
 
@@ -672,10 +718,17 @@ def create_phb2024_character(
     idempotency_key: str = Header(alias='Idempotency-Key'),
 ):
     authorize(x_api_key)
+    try:
+        adventure = get_adventure(getattr(body, 'adventure_id', REDWOOD_ADVENTURE_ID))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail='adventure is not available in the server-owned catalog') from exc
     preview, state = _phb2024_character_preview(body)
     character_id = preview['character']['id']
-    scene = _initial_scene(character_id)
+    if adventure['id'] != REDWOOD_ADVENTURE_ID:
+        raise HTTPException(status_code=422, detail='adventure bootstrap is not implemented')
+    scene = _redwood_watch_scene(character_id)
     state['scene'] = scene
+    state['adventure'] = _adventure_state(adventure, scene)
     state['encounter'] = _initial_encounter()
     try:
         return get_campaign_store().create_campaign(
@@ -832,6 +885,24 @@ def resolve_game_action(action: dict[str, Any], state: dict[str, Any]) -> dict[s
     state.update(body.state)
     scene = state.get('scene')
     combat = state.get('combat')
+    adventure = state.get('adventure')
+    if (
+        mechanical_action.get('type') == 'skill_check'
+        and mechanical_action.get('skill') == 'persuasion'
+        and resolution.get('outcome', {}).get('success') is True
+        and isinstance(adventure, dict)
+        and adventure.get('id') == REDWOOD_ADVENTURE_ID
+        and adventure.get('scene_id') == 'redwood-watch'
+        and isinstance(state.get('character'), dict)
+    ):
+        next_scene = _redwood_grove_scene(state['character']['id'])
+        state['scene'] = next_scene
+        adventure['scene_id'] = next_scene['id']
+        resolution.setdefault('outcome', {})['scene_transition'] = {
+            'from': 'redwood-watch',
+            'to': REDWOOD_GROVE_SCENE_ID,
+        }
+        scene = next_scene
     if (
         mechanical_action.get('type') == 'skill_check'
         and mechanical_action.get('skill') == 'perception'
