@@ -1,10 +1,13 @@
 import unittest
+from unittest.mock import patch
 
 from pydantic import ValidationError
 
 from game.contracts import PHB2024GuidedCharacterRequest
 from rule_engine.character_creation_catalog import character_options_phb2024
 from rule_engine.character_creation_phb2024 import build_phb2024_character
+from rule_engine.character import character_to_state
+from rule_engine.app import resolve_game_action
 
 
 SPECIES_CHOICES = {
@@ -90,6 +93,24 @@ class PHB2024CharacterCreationTests(unittest.TestCase):
             with self.subTest(species_id=species_id):
                 character = build_phb2024_character(self.request(species_id=species_id, species_choices=choices))
                 self.assertEqual(character.species_id, species_id)
+
+    def test_phb2024_character_state_can_resolve_ability_and_skill_checks(self):
+        character = build_phb2024_character(self.request())
+        actions = (
+            {"type": "ability_check", "ability": "wisdom", "dc": 10, "character_id": character.id},
+            {"type": "skill_check", "skill": "perception", "dc": 10, "character_id": character.id},
+        )
+
+        for action in actions:
+            with self.subTest(action_type=action["type"]):
+                state = {"character": character_to_state(character)}
+                self.assertIn("ability_generation", state["character"])
+                with patch("rule_engine.app.roll_dice", return_value={"rolls": [15]}) as roll_dice:
+                    resolution = resolve_game_action(action, state)
+
+                self.assertEqual(resolution["status"], "resolved")
+                self.assertEqual(resolution["rolls"][0]["result"], 15)
+                roll_dice.assert_called_once()
 
     def test_point_buy_accepts_2024_costs_and_rejects_over_budget(self):
         base = {

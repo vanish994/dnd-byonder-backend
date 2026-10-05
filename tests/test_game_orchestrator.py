@@ -37,24 +37,25 @@ class GameOrchestratorTests(unittest.TestCase):
         self.assertEqual(response.state["hp"], 12)
         self.assertIn("narrative_context", response.state)
 
-    def test_free_text_clears_stale_scene_suggestions_after_session_has_started(self):
+    def test_free_text_keeps_server_authorized_scene_suggestions_after_session_has_started(self):
+        actions = [{"type": "skill_check", "skill": "perception"}]
         request = GameTurnRequest(
             state={
                 "scene": {
                     "id": "intro",
-                    "available_actions": [{"type": "skill_check", "skill": "perception"}],
+                    "available_actions": actions,
                 },
                 "narrative_context": {"schema_version": "narrative-context-v1"},
             },
             player_input="Minha intuição diz que algo está errado.",
-            available_actions=[{"type": "skill_check", "skill": "perception"}],
+            available_actions=actions,
         )
 
         response = self.orchestrator.turn(request)
 
-        self.assertEqual(response.available_actions, [])
-        self.assertEqual(response.state["scene"]["available_actions"], [])
-        self.assertEqual(self.narrator.narrate.call_args.kwargs["available_actions"], [])
+        self.assertEqual(response.available_actions, actions)
+        self.assertEqual(response.state["scene"]["available_actions"], actions)
+        self.assertEqual(self.narrator.narrate.call_args.kwargs["available_actions"], actions)
 
     def test_narrator_failure_on_free_text_keeps_needs_validation_status(self):
         self.narrator.narrate.side_effect = NarratorError("HTTP 503")

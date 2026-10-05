@@ -240,6 +240,20 @@ class Character(BaseModel):
         data = dict(value)
         if "class_" in data and "class" not in data:
             data["class"] = data.pop("class_")
+        generation = data.pop("ability_generation", None)
+        if generation is not None:
+            expected_fields = {"method_id", "base_abilities", "background_increases"}
+            if not isinstance(generation, dict) or set(generation) != expected_fields:
+                raise ValueError("invalid PHB 2024 ability_generation metadata")
+            normalized_fields = {
+                "ability_method_id": generation["method_id"],
+                "base_abilities": generation["base_abilities"],
+                "background_ability_increases": generation["background_increases"],
+            }
+            for field, generated_value in normalized_fields.items():
+                if field in data and data[field] != generated_value:
+                    raise ValueError("ability_generation conflicts with canonical character fields")
+                data[field] = generated_value
         data.setdefault("proficiencies", {})
         data.setdefault("weapons", {})
         data.setdefault("inventory", {})
