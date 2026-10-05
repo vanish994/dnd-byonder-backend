@@ -520,6 +520,13 @@ def _initial_scene_actions(character_id: str) -> list[dict[str, Any]]:
             'description': 'Explore a pista, presença ou anomalia que mais chamou sua atenção.',
             'player_input': 'Investigo a pista que mais chamou minha atenção.',
         },
+        {
+            'type': 'narrative_intent',
+            'intent': 'move_stealthily',
+            'label': 'Seguir furtivamente',
+            'description': 'Avance pela rota escolhida tentando não ser percebido.',
+            'player_input': 'Sigo pela rota escolhida furtivamente.',
+        },
     ]
 
 
@@ -667,20 +674,31 @@ def resolve_game_action(action: dict[str, Any], state: dict[str, Any]) -> dict[s
         ):
             raise ValueError('game attacks require a combat actor_id and target_id')
     if mechanical_action.get('type') == 'narrative_intent':
-        if mechanical_action.get('intent') != 'investigate_clue':
+        if mechanical_action.get('intent') not in {'investigate_clue', 'move_stealthily'}:
             raise ValueError('unknown narrative intent')
         scene = state.get('scene')
         if not isinstance(scene, dict) or scene.get('id') != INITIAL_SCENE_ID:
-            raise ValueError('investigation intent is unavailable in this scene')
-        scene['available_actions'] = [{
-            'type': 'skill_check',
-            'skill': 'perception',
-            'dc': 10,
-            'character_id': state.get('character', {}).get('id'),
-            'label': 'Fazer teste de Percepção',
-            'description': 'A pista que você escolheu investigar exige atenção. Faça um teste de Percepção.',
-            'player_input': 'Faço um teste de Percepção para investigar a pista.',
-        }]
+            raise ValueError('narrative intent is unavailable in this scene')
+        if mechanical_action.get('intent') == 'move_stealthily':
+            scene['available_actions'] = [{
+                'type': 'skill_check',
+                'skill': 'stealth',
+                'dc': 10,
+                'character_id': state.get('character', {}).get('id'),
+                'label': 'Fazer teste de Furtividade',
+                'description': 'Avançar sem ser percebido exige um teste de Furtividade.',
+                'player_input': 'Faço um teste de Furtividade para avançar sem ser percebido.',
+            }]
+        else:
+            scene['available_actions'] = [{
+                'type': 'skill_check',
+                'skill': 'perception',
+                'dc': 10,
+                'character_id': state.get('character', {}).get('id'),
+                'label': 'Fazer teste de Percepção',
+                'description': 'A pista que você escolheu investigar exige atenção. Faça um teste de Percepção.',
+                'player_input': 'Faço um teste de Percepção para investigar a pista.',
+            }]
         return {
             'schema_version': RULE_RESOLUTION_SCHEMA_VERSION,
             'status': 'needs_rule_validation',
@@ -734,6 +752,21 @@ def resolve_game_action(action: dict[str, Any], state: dict[str, Any]) -> dict[s
             'label': 'Avançar para o confronto',
             'description': 'Você já investigou. Escolha conscientemente se quer enfrentar a ameaça; ou descreva outra ação livremente.',
             'player_input': 'Avanço para o confronto.',
+        }]
+    if (
+        mechanical_action.get('type') == 'skill_check'
+        and mechanical_action.get('skill') == 'stealth'
+        and resolution.get('outcome', {}).get('success') is True
+        and isinstance(scene, dict)
+        and scene.get('id') == INITIAL_SCENE_ID
+        and not (isinstance(combat, dict) and combat.get('active'))
+    ):
+        scene['available_actions'] = [{
+            'type': 'narrative_intent',
+            'intent': 'investigate_clue',
+            'label': 'Investigar uma pista',
+            'description': 'Explore a pista, presença ou anomalia que mais chamou sua atenção.',
+            'player_input': 'Investigo a pista que mais chamou minha atenção.',
         }]
     return resolution
 

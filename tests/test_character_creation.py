@@ -112,9 +112,13 @@ class CharacterCreationTests(unittest.TestCase):
         self.assertEqual(created["state"]["character"], created["character"])
         self.assertEqual(created["state"]["scene"]["id"], "intro")
         self.assertEqual(created["state"]["encounter"]["id"], "intro-ambush")
-        self.assertEqual([action["type"] for action in created["available_actions"]], ["ability_check", "narrative_intent"])
+        self.assertEqual(
+            [action["type"] for action in created["available_actions"]],
+            ["ability_check", "narrative_intent", "narrative_intent"],
+        )
         investigate_action = created["available_actions"][1]
         self.assertEqual(investigate_action["intent"], "investigate_clue")
+        self.assertEqual(created["available_actions"][2]["intent"], "move_stealthily")
         self.assertEqual(str(UUID(created["campaign_id"])), created["campaign_id"])
         self.assertNotEqual(created["character"]["id"], preview["character"]["id"])
 

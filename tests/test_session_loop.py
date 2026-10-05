@@ -43,12 +43,13 @@ class SessionLoopTests(unittest.TestCase):
         self.assertEqual(created['state']['scene']['id'], 'intro')
         self.assertEqual(created['state']['scene']['type'], 'exploration')
         self.assertEqual(created['state']['encounter']['id'], 'intro-ambush')
-        self.assertEqual(len(created['available_actions']), 2)
+        self.assertEqual(len(created['available_actions']), 3)
         self.assertEqual(
             [action['type'] for action in created['available_actions']],
-            ['ability_check', 'narrative_intent'],
+            ['ability_check', 'narrative_intent', 'narrative_intent'],
         )
         self.assertEqual(created['available_actions'][1]['intent'], 'investigate_clue')
+        self.assertEqual(created['available_actions'][2]['intent'], 'move_stealthily')
         self.assertEqual(created['state']['scene']['title'], 'Abertura')
         self.assertTrue(created['state']['scene']['opening_seed'])
         self.assertNotEqual(self.create()['state']['scene']['opening_seed'], created['state']['scene']['opening_seed'])
@@ -105,6 +106,39 @@ class SessionLoopTests(unittest.TestCase):
         self.assertEqual(checked.state['scene']['type'], 'exploration')
         self.assertNotIn('combat', checked.state)
         self.assertNotIn('start_combat', [action['type'] for action in checked.available_actions])
+
+    def test_successful_stealth_stays_in_exploration_and_unlocks_investigation(self):
+        created = self.create()
+        narrator = Mock()
+        narrator.narrate.return_value = 'Você avança sem ser percebido.'
+        orchestrator = GameOrchestrator(narrator, resolve_action=api.resolve_game_action)
+        stealth_intent = created['available_actions'][2]
+        with patch.object(api, 'roll_dice', return_value={'rolls': [15]}):
+            intent_turn = orchestrator.turn(GameTurnRequest(
+                campaign_id=created['campaign_id'],
+                state=created['state'],
+                player_input=stealth_intent['player_input'],
+                action=stealth_intent,
+                available_actions=created['available_actions'],
+            ))
+        self.assertEqual(intent_turn.rule_resolution['status'], 'needs_rule_validation')
+        stealth_check = intent_turn.available_actions[0]
+        self.assertEqual(stealth_check['skill'], 'stealth')
+        with patch.object(api, 'roll_dice', return_value={'rolls': [15]}):
+            checked = orchestrator.turn(GameTurnRequest(
+                campaign_id=created['campaign_id'],
+                state=intent_turn.state,
+                player_input=stealth_check['player_input'],
+                action=stealth_check,
+                available_actions=intent_turn.available_actions,
+            ))
+
+        self.assertEqual(checked.rule_resolution['action']['type'], 'skill_check')
+        self.assertEqual(checked.rule_resolution['action']['skill'], 'stealth')
+        self.assertTrue(checked.rule_resolution['outcome']['success'])
+        self.assertEqual(checked.state['scene']['type'], 'exploration')
+        self.assertNotIn('combat', checked.state)
+        self.assertEqual(checked.available_actions[0]['intent'], 'investigate_clue')
 
     def test_start_combat_materializes_server_owned_encounter_and_returns_actions(self):
         created = self.create()
