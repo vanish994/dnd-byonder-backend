@@ -22,7 +22,7 @@ Expandir o fluxo atual de Dragon Delves para uma fatia jogável de exploração,
 | `exploration-redwood` | Cenas, ações server-owned, investigação e descobertas de Redwood Grove | `session-foundation`, `character-2024` |
 | `social-kaynen` | Respeito, Persuasão, atitude e desbloqueios da sequência de Kaynen | `exploration-redwood`, `character-2024` |
 | `combat-2024` | Encontro jogável, iniciativa, ataques, dano, condições e encerramento somente com regras confirmadas | `session-foundation`, `character-2024` |
-| `frontend-playable` | Fluxo mobile-first para criação, cena, ações, rolagens, combate e retomada | `session-foundation`, `exploration-redwood`, `social-kaynen`, `combat-2024` |
+| `frontend-playable` | Fluxo mobile-first para criação, cena, ações, rolagens, combate e retomada, com a narração como área visual principal | `session-foundation`, `exploration-redwood`, `social-kaynen`, `combat-2024` |
 | `narrator-gemini` | Interpretação de intenção e narrativa limitada ao snapshot e aos fatos autorizados | `session-foundation`, `exploration-redwood`, `social-kaynen`, `combat-2024` |
 | `quality-performance` | Testes E2E, auditoria de edição 2024, validação mobile e medições de desempenho | todos os módulos funcionais |
 
@@ -36,6 +36,15 @@ Expandir o fluxo atual de Dragon Delves para uma fatia jogável de exploração,
 6. `narrator-gemini`
 7. `frontend-playable`
 8. `quality-performance`
+
+## Diretriz de layout da interface
+
+- Priorizar a área de narração no primeiro viewport e durante a leitura da cena.
+- Reduzir cabeçalhos, painéis auxiliares, espaçamentos e elementos repetitivos que ocupem altura sem ajudar a decisão do jogador.
+- Manter ações disponíveis próximas da narração, mas visualmente secundárias até serem necessárias.
+- Em smartphones, evitar que status, inventário e controles empurrem a narrativa para fora da tela; usar seções compactas e expansíveis.
+- Validar a proporção de espaço e a legibilidade em viewport móvel representativa antes de adaptar para tablet e desktop.
+- Não sacrificar alvos de toque de pelo menos 44 px nem criar overflow horizontal.
 
 ## Gate de aprovação
 
