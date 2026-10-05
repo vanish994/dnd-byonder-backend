@@ -7,7 +7,7 @@ import httpx
 from game.orchestrator import GameOrchestrator
 from game.resolution_gate import ResolutionGateDecision
 from game.contracts import GameTurnRequest
-from services.groq_mj import GroqIntentInterpreter, GroqIntentError
+from services.gemini_mj import GeminiMJClient, GeminiMJError
 
 
 class ResolutionGateTests(unittest.TestCase):
@@ -26,20 +26,20 @@ class ResolutionGateTests(unittest.TestCase):
                 "success": True,
             })
 
-    def test_groq_interpreter_requires_structured_json(self):
+    def test_gemini_interpreter_requires_structured_json(self):
         captured = {}
 
         def handler(request):
             captured["body"] = json.loads(request.content)
-            return httpx.Response(200, json={"choices": [{"message": {"content": json.dumps({
+            return httpx.Response(200, json={"candidates": [{"content": {"parts": [{"text": json.dumps({
                 "schema_version": "resolution-gate-v1",
                 "requires_resolution": True,
                 "resolution": {"type": "skill_check", "skill": "stealth"},
-            })}}]})
+            })}]}}]})
 
-        interpreter = GroqIntentInterpreter(
-            api_key="groq-secret",
-            model="llama-test",
+        interpreter = GeminiMJClient(
+            api_key="gemini-secret",
+            model="gemini-test",
             transport=httpx.MockTransport(handler),
         )
         result = interpreter.interpret(
@@ -50,20 +50,21 @@ class ResolutionGateTests(unittest.TestCase):
         self.assertEqual(result["schema_version"], "resolution-gate-v1")
         self.assertTrue(result["requires_resolution"])
         self.assertEqual(result["resolution"], {"type": "skill_check", "skill": "stealth"})
-        self.assertEqual(captured["body"]["response_format"], {"type": "json_object"})
+        self.assertEqual(captured["body"]["generationConfig"]["responseMimeType"], "application/json")
+        self.assertIn("responseSchema", captured["body"]["generationConfig"])
         self.assertNotIn("dc", result["resolution"])
         self.assertNotIn("success", result)
         self.assertNotIn("hp", result)
 
-    def test_invalid_groq_json_fails_closed(self):
-        interpreter = GroqIntentInterpreter(
-            api_key="groq-secret",
-            model="llama-test",
+    def test_invalid_gemini_json_fails_closed(self):
+        interpreter = GeminiMJClient(
+            api_key="gemini-secret",
+            model="gemini-test",
             transport=httpx.MockTransport(lambda _request: httpx.Response(
-                200, json={"choices": [{"message": {"content": '{"success":true}'}}]}
+                200, json={"candidates": [{"content": {"parts": [{"text": '{"success":true}'}]}}]}
             )),
         )
-        with self.assertRaises(GroqIntentError):
+        with self.assertRaises(GeminiMJError):
             interpreter.interpret(campaign_id="c", state={}, player_input="x")
 
     def test_trivial_intent_does_not_call_rule_engine(self):

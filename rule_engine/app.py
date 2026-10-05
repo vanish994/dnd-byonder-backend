@@ -65,8 +65,7 @@ from rule_engine.character import (
 from rule_engine.character_creation_catalog import character_options_phb2024
 from rule_engine.character_creation_phb2024 import build_phb2024_character
 from rule_engine.source_policy import STRICT_EDITION_SCOPE, append_strict_source_policy
-from services.groq_narrator import GroqNarratorClient
-from services.groq_mj import GroqIntentInterpreter
+from services.gemini_mj import GeminiMJClient
 from services.narrator import UnavailableNarratorProvider
 
 
@@ -79,9 +78,9 @@ DB_PATH = Path(
     )
 )
 API_KEY = os.getenv('RULE_ENGINE_API_KEY', '').strip()
-GROQ_API_KEY = os.getenv('GROQ_API_KEY', '').strip()
-GROQ_MODEL = os.getenv('GROQ_MODEL', '').strip()
-GROQ_BASE_URL = os.getenv('GROQ_BASE_URL', 'https://api.groq.com/openai/v1').strip()
+GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '').strip()
+GEMINI_MODEL = os.getenv('GEMINI_MODEL', 'gemini-3.5-flash-lite').strip()
+GEMINI_BASE_URL = os.getenv('GEMINI_BASE_URL', 'https://generativelanguage.googleapis.com/v1beta').strip()
 app = FastAPI(title='D&D 2024 Rule Knowledge API', version='0.1.0')
 
 ABILITY_CHECK_RULE_ID = 'ability_check.mvp.v1'
@@ -811,33 +810,25 @@ def _validate_snapshot_action(action: dict[str, Any] | None, state: dict[str, An
 
 
 def build_game_orchestrator() -> GameOrchestrator:
-    if not GROQ_API_KEY or not GROQ_MODEL or not GROQ_BASE_URL:
-        logger.warning("NARRATOR_CONFIGURATION_MISSING fallback=local")
+    if not GEMINI_API_KEY or not GEMINI_MODEL or not GEMINI_BASE_URL:
+        logger.warning("GEMINI_CONFIGURATION_MISSING fallback=local")
         return GameOrchestrator(UnavailableNarratorProvider(), resolve_action=resolve_game_action)
     try:
-        timeout = float(os.getenv('GROQ_TIMEOUT_SECONDS', '20'))
-        max_output_tokens = int(os.getenv('GROQ_MAX_OUTPUT_TOKENS', '512'))
-        temperature = float(os.getenv('GROQ_TEMPERATURE', '0.7'))
-        narrator = GroqNarratorClient(
-            api_key=GROQ_API_KEY,
-            model=GROQ_MODEL,
-            base_url=GROQ_BASE_URL,
+        timeout = float(os.getenv('GEMINI_TIMEOUT_SECONDS', '20'))
+        max_output_tokens = int(os.getenv('GEMINI_MAX_OUTPUT_TOKENS', '512'))
+        temperature = float(os.getenv('GEMINI_TEMPERATURE', '0.7'))
+        gemini = GeminiMJClient(
+            api_key=GEMINI_API_KEY,
+            model=GEMINI_MODEL,
+            base_url=GEMINI_BASE_URL,
             timeout_seconds=timeout,
             max_output_tokens=max_output_tokens,
             temperature=temperature,
         )
-        interpreter = GroqIntentInterpreter(
-            api_key=GROQ_API_KEY,
-            model=GROQ_MODEL,
-            base_url=GROQ_BASE_URL,
-            timeout_seconds=timeout,
-            max_output_tokens=min(max_output_tokens, 256),
-        )
     except ValueError as exc:
-        logger.warning("NARRATOR_CONFIGURATION_INVALID error_type=%s fallback=local", type(exc).__name__)
-        narrator = UnavailableNarratorProvider()
-        interpreter = None
-    return GameOrchestrator(narrator, resolve_action=resolve_game_action, interpret_intent=interpreter.interpret if interpreter else None)
+        logger.warning("GEMINI_CONFIGURATION_INVALID error_type=%s fallback=local", type(exc).__name__)
+        return GameOrchestrator(UnavailableNarratorProvider(), resolve_action=resolve_game_action)
+    return GameOrchestrator(gemini, resolve_action=resolve_game_action, interpret_intent=gemini.interpret)
 
 
 @app.get('/v1/sessions/{session_id}', response_model=SessionResumeResponse)

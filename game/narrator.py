@@ -187,7 +187,7 @@ def build_narrator_content(
 
 
 def fallback_narration(rule_resolution: dict[str, Any], player_input: str) -> str:
-    """Return truthful local narration when Groq is unavailable."""
+    """Return truthful local narration when Gemini is unavailable."""
     if rule_resolution.get("status") != "resolved":
         return "A cena aguarda uma resolução mecânica antes de avançar."
     action = _record(rule_resolution.get("action"))
