@@ -96,6 +96,19 @@ class RedwoodGroveTests(unittest.TestCase):
         self.assertEqual(state["scene"]["available_actions"][0]["intent"], "collect_bark_sample")
         self.assertEqual(state["scene"]["available_actions"][0]["tree_id"], "r3")
 
+    def test_watch_to_grove_transition_does_not_skip_kaynen_respect(self):
+        state = self.state()
+        state["adventure"]["scene_id"] = "redwood-watch"
+        state["scene"] = api._redwood_watch_scene("character-1")
+        action = state["scene"]["available_actions"][0]
+        with patch("rule_engine.app.roll_dice", return_value={"rolls": [20]}):
+            resolution = api.resolve_game_action(action, state)
+        self.assertEqual(resolution["outcome"]["scene_transition"], {
+            "from": "redwood-watch", "to": "redwood-grove-r3",
+        })
+        self.assertEqual(state["adventure"]["kaynen_attitude"], "hostile")
+        self.assertEqual(state["scene"]["available_actions"][0]["intent"], "show_respect_to_kaynen")
+
     def test_collect_bark_sample_is_a_server_owned_state_transition(self):
         state = self.state()
         self.make_friendly(state)

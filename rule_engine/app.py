@@ -850,6 +850,7 @@ def resolve_adventure_action(body: ResolveRequest) -> dict[str, Any]:
 
 def resolve_game_action(action: dict[str, Any], state: dict[str, Any]) -> dict[str, Any]:
     """Validate and resolve a structured action using the existing Rule Engine."""
+    scene_transitioned = False
     mechanical_action = {
         key: value for key, value in action.items()
         if key not in ACTION_PRESENTATION_FIELDS
@@ -944,11 +945,13 @@ def resolve_game_action(action: dict[str, Any], state: dict[str, Any]) -> dict[s
         next_scene = _redwood_grove_scene(state['character']['id'])
         state['scene'] = next_scene
         adventure['scene_id'] = next_scene['id']
+        adventure['kaynen_attitude'] = 'hostile'
         resolution.setdefault('outcome', {})['scene_transition'] = {
             'from': 'redwood-watch',
             'to': REDWOOD_GROVE_SCENE_ID,
         }
         scene = next_scene
+        scene_transitioned = True
     if (
         mechanical_action.get('type') == 'skill_check'
         and mechanical_action.get('skill') == 'perception'
@@ -1001,6 +1004,7 @@ def resolve_game_action(action: dict[str, Any], state: dict[str, Any]) -> dict[s
         and resolution.get('outcome', {}).get('success') is True
         and isinstance(scene, dict)
         and scene.get('id') == REDWOOD_GROVE_SCENE_ID
+        and not scene_transitioned
     ):
         adventure = state.setdefault('adventure', {})
         adventure['kaynen_attitude'] = 'friendly'
