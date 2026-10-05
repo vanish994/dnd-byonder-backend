@@ -52,11 +52,40 @@ class GameApiTests(unittest.TestCase):
             api.game_turn(api.GameTurnRequest(player_input="x"), "wrong")
         self.assertEqual(raised.exception.status_code, 401)
 
-    def test_missing_groq_configuration_is_503(self):
+    @patch.object(api, "resolve_game_action")
+    def test_missing_groq_configuration_uses_fallback_and_preserves_rule_resolution(self, resolve_action):
         api.GROQ_API_KEY = ""
-        with self.assertRaises(HTTPException) as raised:
-            api.game_turn(api.GameTurnRequest(player_input="x"), "backend-secret")
-        self.assertEqual(raised.exception.status_code, 503)
+        resolution = {
+            "schema_version": "rule-resolution-v1",
+            "status": "resolved",
+            "action": {"type": "attack"},
+            "outcome": {"hit": True, "damage": 5},
+        }
+        resolve_action.return_value = resolution
+
+        result = api.game_turn(
+            api.GameTurnRequest(
+                campaign_id="campaign_123",
+                player_input="Eu ataco.",
+                action={"type": "attack"},
+            ),
+            "backend-secret",
+        )
+
+        self.assertEqual(result.narration_status, "unavailable")
+        self.assertEqual(result.narration, "Seu ataque atinge o alvo e causa 5 de dano.")
+        self.assertEqual(result.rule_resolution, resolution)
+        resolve_action.assert_called_once()
+
+    def test_invalid_groq_runtime_configuration_uses_local_narration_fallback(self):
+        with patch.dict("os.environ", {"GROQ_TIMEOUT_SECONDS": "not-a-number"}):
+            result = api.game_turn(
+                api.GameTurnRequest(player_input="Aguardo.", action=None),
+                "backend-secret",
+            )
+
+        self.assertEqual(result.narration_status, "unavailable")
+        self.assertEqual(result.narration, "A cena aguarda uma resolução mecânica antes de avançar.")
 
     def test_groq_configuration_builds_groq_narrator(self):
         with patch.object(api, "GroqNarratorClient") as narrator_cls:

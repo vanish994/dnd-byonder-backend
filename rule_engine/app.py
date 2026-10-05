@@ -49,6 +49,7 @@ from rule_engine.character import (
 )
 from rule_engine.source_policy import STRICT_EDITION_SCOPE, append_strict_source_policy
 from services.groq_narrator import GroqNarratorClient
+from services.narrator import UnavailableNarratorProvider
 
 
 logger = logging.getLogger(__name__)
@@ -624,21 +625,23 @@ def resolve_game_action(action: dict[str, Any], state: dict[str, Any]) -> dict[s
 
 def build_game_orchestrator() -> GameOrchestrator:
     if not GROQ_API_KEY or not GROQ_MODEL or not GROQ_BASE_URL:
-        raise HTTPException(status_code=503, detail='Groq narrator is not configured')
+        logger.warning("NARRATOR_CONFIGURATION_MISSING fallback=local")
+        return GameOrchestrator(UnavailableNarratorProvider(), resolve_action=resolve_game_action)
     try:
         timeout = float(os.getenv('GROQ_TIMEOUT_SECONDS', '30'))
         max_output_tokens = int(os.getenv('GROQ_MAX_OUTPUT_TOKENS', '512'))
         temperature = float(os.getenv('GROQ_TEMPERATURE', '0.7'))
+        narrator = GroqNarratorClient(
+            api_key=GROQ_API_KEY,
+            model=GROQ_MODEL,
+            base_url=GROQ_BASE_URL,
+            timeout_seconds=timeout,
+            max_output_tokens=max_output_tokens,
+            temperature=temperature,
+        )
     except ValueError as exc:
-        raise HTTPException(status_code=503, detail='invalid Groq narrator configuration') from exc
-    narrator = GroqNarratorClient(
-        api_key=GROQ_API_KEY,
-        model=GROQ_MODEL,
-        base_url=GROQ_BASE_URL,
-        timeout_seconds=timeout,
-        max_output_tokens=max_output_tokens,
-        temperature=temperature,
-    )
+        logger.warning("NARRATOR_CONFIGURATION_INVALID error_type=%s fallback=local", type(exc).__name__)
+        narrator = UnavailableNarratorProvider()
     return GameOrchestrator(narrator, resolve_action=resolve_game_action)
 
 
