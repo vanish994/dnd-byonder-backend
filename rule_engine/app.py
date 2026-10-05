@@ -159,8 +159,10 @@ class AttackAction(BaseModel):
             raise ValueError('actor_id and target_id must be provided together')
         if self.actor_id is None and self.target_ac is None:
             raise ValueError('target_ac is required outside combat')
-        if self.actor_id is not None and self.target_ac is not None:
-            raise ValueError('target_ac must come from combat state')
+        if self.actor_id is not None:
+            caller_supplied_fields = {'attack_bonus', 'target_ac', 'damage'}.intersection(self.model_fields_set)
+            if caller_supplied_fields:
+                raise ValueError('combat attack values must be derived by the Rule Engine')
         if self.attack_bonus is None and self.weapon_id is None and self.actor_id is None:
             raise ValueError('attack requires attack_bonus or weapon_id')
         if self.actor_id is None and self.attack_bonus is None:
@@ -601,6 +603,16 @@ def resolve_game_action(action: dict[str, Any], state: dict[str, Any]) -> dict[s
         key: value for key, value in action.items()
         if key not in ACTION_PRESENTATION_FIELDS
     }
+    if mechanical_action.get('type') == 'attack':
+        actor_id = mechanical_action.get('actor_id')
+        target_id = mechanical_action.get('target_id')
+        if (
+            not isinstance(actor_id, str)
+            or not actor_id.strip()
+            or not isinstance(target_id, str)
+            or not target_id.strip()
+        ):
+            raise ValueError('game attacks require a combat actor_id and target_id')
     if mechanical_action.get('type') == 'narrative_intent':
         if mechanical_action.get('intent') != 'investigate_noise':
             raise ValueError('unknown narrative intent')
@@ -1548,27 +1560,23 @@ def _resolve_single_combat_attack(
     else:
         attack_roll_mode = 'normal'
     derived_rules: list[str] = []
-    if action.weapon_id is not None or action.attack_bonus is None:
-        character, derived = _character_for_combatant(body.state, actor)
-        requested_weapon_id = action.weapon_id or character.equipped.get('weapon')
-        if requested_weapon_id is None:
-            raise ValueError('combat attack requires an equipped weapon')
-        raw_character = actor.get('character') or body.state.get('character') or {}
-        if 'equipped' in raw_character and raw_character.get('equipped', {}).get('weapon') != requested_weapon_id:
-            raise ValueError('weapon is not equipped')
-        weapon = character.weapon(requested_weapon_id)
-        attack_bonus = derived['ability_modifiers'][weapon.ability]
-        if weapon.proficient:
-            attack_bonus += derived['proficiency_bonus']
-        damage = AttackDamage(dice=weapon.damage_dice, modifier=derived['ability_modifiers'][weapon.ability])
-        derived_rules = [WEAPON_ATTACK_RULE_ID, WEAPON_DAMAGE_RULE_ID, ABILITY_MODIFIER_RULE_ID, PROFICIENCY_BONUS_RULE_ID]
-        resolved_weapon_id = requested_weapon_id
-    else:
-        if action.attack_bonus is None or action.damage is None:
-            raise ValueError('legacy combat attack requires attack_bonus and damage')
-        attack_bonus = action.attack_bonus
-        damage = action.damage
-        resolved_weapon_id = None
+    caller_supplied_fields = {'attack_bonus', 'target_ac', 'damage'}.intersection(action.model_fields_set)
+    if caller_supplied_fields:
+        raise ValueError('combat attack values must be derived by the Rule Engine')
+    character, derived = _character_for_combatant(body.state, actor)
+    requested_weapon_id = action.weapon_id or character.equipped.get('weapon')
+    if requested_weapon_id is None:
+        raise ValueError('combat attack requires an equipped weapon')
+    raw_character = actor.get('character') or body.state.get('character') or {}
+    if 'equipped' in raw_character and raw_character.get('equipped', {}).get('weapon') != requested_weapon_id:
+        raise ValueError('weapon is not equipped')
+    weapon = character.weapon(requested_weapon_id)
+    attack_bonus = derived['ability_modifiers'][weapon.ability]
+    if weapon.proficient:
+        attack_bonus += derived['proficiency_bonus']
+    damage = AttackDamage(dice=weapon.damage_dice, modifier=derived['ability_modifiers'][weapon.ability])
+    derived_rules = [WEAPON_ATTACK_RULE_ID, WEAPON_DAMAGE_RULE_ID, ABILITY_MODIFIER_RULE_ID, PROFICIENCY_BONUS_RULE_ID]
+    resolved_weapon_id = requested_weapon_id
     standalone_action = AttackAction(type='attack', attack_bonus=attack_bonus, target_ac=target['ac'], damage=damage)
     resolution = resolve_attack(
         ResolveRequest(action=standalone_action), randbelow=randbelow, roll_mode=attack_roll_mode,

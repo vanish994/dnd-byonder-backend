@@ -76,3 +76,9 @@ Quando não há ação estruturada válida, a resposta usa o envelope:
 Esse envelope não é enviado como fato mecânico ao narrador: o transporte `<FATOS_RESOLVIDOS>` recebe `{}`. Quando a resolução tem `status: "resolved"`, o mesmo objeto `rule-resolution-v1` é transportado integralmente.
 
 O backend é stateless: devolve o estado recebido e não persiste campanha, saves ou histórico.
+
+## C1 — comandos de ataque e limite de autoridade
+
+No `POST /v1/game/turn`, um comando público de ataque contém `type: "attack"`, `actor_id`, `target_id` e `weapon_id` opcional. Os campos de apresentação canônicos `label`, `description` e `player_input` também podem acompanhar a sugestão do Mestre; o Backend os remove antes da resolução mecânica. `attack_bonus`, `target_ac` e `damage` são valores mecânicos derivados e não podem ser fornecidos pelo cliente. O Rule Engine valida a arma equipada e resolve o ataque a partir do personagem e do alvo disponíveis no estado recebido; o contrato de saída continua sendo `rule-resolution-v1`.
+
+**Limite pendente de C2:** o Backend ainda é stateless e recebe `state` do cliente. A validação do comando remove a injeção direta de bônus/dano, mas não torna atributos, equipamento, HP, combate ou revisão do estado confiáveis. Até C2 estabelecer snapshot canônico no servidor, vínculo de sessão/campanha e controle de revisão/idempotência, este fluxo não deve ser tratado como estado autoritativo de campanha compartilhada.

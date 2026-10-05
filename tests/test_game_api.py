@@ -47,6 +47,30 @@ class GameApiTests(unittest.TestCase):
         self.assertEqual(result["rule_resolution"]["schema_version"], "rule-resolution-v1")
         self.assertNotIn("facts_resolvidos", result)
 
+    def test_turn_rejects_client_attack_bonus_and_damage_before_rolling(self):
+        api.GROQ_API_KEY = ""
+        request = api.GameTurnRequest(
+            campaign_id="campaign_123",
+            player_input="Eu ataco.",
+            state={"marker": "must-remain-unchanged"},
+            action={
+                "type": "attack",
+                "actor_id": "player",
+                "target_id": "goblin-1",
+                "attack_bonus": 999999,
+                "damage": {"dice": "1d8", "modifier": 3},
+            },
+        )
+        state_before = dict(request.state)
+
+        with patch.object(api, "roll_dice") as roll_dice:
+            with self.assertRaises(HTTPException) as raised:
+                api.game_turn(request, "backend-secret")
+            self.assertEqual(raised.exception.status_code, 422)
+            roll_dice.assert_not_called()
+
+        self.assertEqual(request.state, state_before)
+
     def test_invalid_backend_key_is_rejected(self):
         with self.assertRaises(HTTPException) as raised:
             api.game_turn(api.GameTurnRequest(player_input="x"), "wrong")

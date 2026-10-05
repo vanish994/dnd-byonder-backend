@@ -1,10 +1,14 @@
 import json
 import unittest
 from copy import deepcopy
+from unittest.mock import patch
 
-from game.contracts import GameTurnResponse
+from game.contracts import GameTurnResponse, PHB2024GuidedCharacterRequest
 import rule_engine.app as api
+from rule_engine.character import Character, character_to_state
+from rule_engine.character_creation_phb2024 import build_phb2024_character
 from rule_engine.conditions import add_condition, remove_condition
+from rule_engine.equipment import WEAPON_CATALOG
 
 
 def json_round_trip(value):
@@ -40,6 +44,41 @@ class CombatVerticalSliceTests(unittest.TestCase):
             },
         ]
 
+    def phb2024_fighter_state(self):
+        request = PHB2024GuidedCharacterRequest(
+            name="Combatente de teste 2024",
+            class_id="fighter",
+            level=1,
+            species_id="dwarf",
+            species_choices={},
+            background_id="farmer",
+            alignment_id="neutral_good",
+            ability_method_id="standard_array",
+            base_abilities={
+                "strength": 15, "dexterity": 14, "constitution": 13,
+                "intelligence": 12, "wisdom": 10, "charisma": 8,
+            },
+            background_ability_increases={"strength": 2, "constitution": 1},
+            abilities={
+                "strength": 17, "dexterity": 14, "constitution": 14,
+                "intelligence": 12, "wisdom": 10, "charisma": 8,
+            },
+            skills=["athletics", "perception"],
+            language_choices=["draconic", "dwarvish"],
+            class_equipment_option="A",
+            background_equipment_option="A",
+        )
+        character = build_phb2024_character(request)
+        character_data = character_to_state(character)
+        longsword = WEAPON_CATALOG["longsword"]
+        character_data["weapons"] = {"longsword": longsword}
+        character_data["inventory"] = {
+            "longsword": {"item_id": "longsword", "quantity": 1, "item": longsword},
+        }
+        character_data["equipped"] = {"weapon": "longsword", "armor": None}
+        character_data["id"] = "player"
+        return character_to_state(Character.model_validate(character_data))
+
     def apply(self, state, action, *, randbelow=None):
         body = api.ResolveRequest(action=action, state=state)
         result = api.resolve_request(body, randbelow=randbelow)
@@ -48,9 +87,12 @@ class CombatVerticalSliceTests(unittest.TestCase):
         return result
 
     def start(self, state, *, initiative=(10, 8), combatants=None):
+        selected_combatants = combatants or self.combatants()
+        if "character" not in state and any(item.get("id") == "player" for item in selected_combatants):
+            state["character"] = self.phb2024_fighter_state()
         return self.apply(
             state,
-            {"type": "start_combat", "combatants": combatants or self.combatants()},
+            {"type": "start_combat", "combatants": selected_combatants},
             randbelow=self.sequence(*initiative),
         )
 
@@ -85,8 +127,7 @@ class CombatVerticalSliceTests(unittest.TestCase):
                 "type": "attack",
                 "actor_id": "player",
                 "target_id": target,
-                "attack_bonus": 5,
-                "damage": {"dice": "1d8", "modifier": 3},
+                "weapon_id": "longsword",
             },
             randbelow=self.sequence(*attack_rolls),
         )
@@ -246,8 +287,7 @@ class CombatVerticalSliceTests(unittest.TestCase):
                     "type": "attack",
                     "actor_id": "player",
                     "target_id": "missing",
-                    "attack_bonus": 5,
-                    "damage": {"dice": "1d8", "modifier": 3},
+                    "weapon_id": "longsword",
                 },
             )
 
@@ -349,8 +389,7 @@ class CombatVerticalSliceTests(unittest.TestCase):
                 "type": "attack",
                 "actor_id": "player",
                 "target_id": "goblin-1",
-                "attack_bonus": 5,
-                "damage": {"dice": "1d8", "modifier": 3},
+                "weapon_id": "longsword",
             })
         self.assertEqual(state, before)
 
@@ -549,7 +588,7 @@ class CombatVerticalSliceTests(unittest.TestCase):
         self.assertEqual(target["hp"], 7)
         self.assertFalse(state["combat"]["combatants"]["player"]["action_available"])
 
-    def test_attack_uses_ac_from_state_not_client_target_ac(self):
+    def test_attack_uses_ac_from_combat_state(self):
         state = {}
         self.start(state)
         result = self.apply(
@@ -558,8 +597,7 @@ class CombatVerticalSliceTests(unittest.TestCase):
                 "type": "attack",
                 "actor_id": "player",
                 "target_id": "goblin-1",
-                "attack_bonus": 5,
-                "damage": {"dice": "1d8", "modifier": 0},
+                "weapon_id": "longsword",
             },
             randbelow=self.sequence(7, 1),
         )
@@ -735,24 +773,28 @@ class CombatVerticalSliceTests(unittest.TestCase):
         self.assertFalse(state["combat"]["active"])
         self.assertEqual(state["combat"]["winner_side"], "player")
 
-    def test_negative_damage_modifier_is_allowed_and_clamped_at_zero(self):
+    def test_combat_attack_rejects_client_mechanics_without_rolling_or_mutating(self):
         state = {}
         self.start(state)
-        before = repr(state)
+        before = deepcopy(state)
+        invalid_actions = [
+            {"type": "attack", "actor_id": "player", "target_id": "goblin-1", "attack_bonus": 999999},
+            {"type": "attack", "actor_id": "player", "target_id": "goblin-1", "damage": {"dice": "1d8", "modifier": 3}},
+            {"type": "attack", "actor_id": "player", "target_id": "goblin-1", "damage": None},
+            {"type": "attack", "actor_id": "player", "target_id": "goblin-1", "target_ac": 1},
+        ]
 
-        result = self.apply(
-            state,
-            {
-                "type": "attack",
-                "actor_id": "player",
-                "target_id": "goblin-1",
-                "attack_bonus": 5,
-                "damage": {"dice": "1d8", "modifier": -10},
-            },
-            randbelow=self.sequence(15, 1),
-        )
-        self.assertEqual(result["outcome"]["damage"], 0)
-        self.assertNotEqual(repr(state), before)
+        for action in invalid_actions:
+            with self.subTest(action=action):
+                with patch.object(api, "roll_dice") as roll_dice:
+                    with self.assertRaisesRegex(ValueError, "invalid structured action"):
+                        api.resolve_game_action(action, state)
+                    roll_dice.assert_not_called()
+                self.assertEqual(state, before)
+
+        with self.assertRaisesRegex(ValueError, "game attacks require a combat actor_id and target_id"):
+            api.resolve_game_action({"type": "attack", "attack_bonus": 999999, "target_ac": 1}, state)
+        self.assertEqual(state, before)
 
     def test_hp_zero_requires_consistent_unconscious_state(self):
         state = {}
@@ -870,8 +912,7 @@ class CombatVerticalSliceTests(unittest.TestCase):
                     "type": "attack",
                     "actor_id": "player",
                     "target_id": "goblin-1",
-                    "attack_bonus": 5,
-                    "damage": {"dice": "1d8", "modifier": 3},
+                    "weapon_id": "longsword",
                 },
             )
 
@@ -917,8 +958,7 @@ class CombatVerticalSliceTests(unittest.TestCase):
                     "type": "attack",
                     "actor_id": "player",
                     "target_id": "goblin-1",
-                    "attack_bonus": 5,
-                    "damage": {"dice": "1d8", "modifier": 0},
+                    "weapon_id": "longsword",
                 },
                 randbelow=self.sequence(20, 8),
             )
@@ -1361,8 +1401,7 @@ class CombatVerticalSliceTests(unittest.TestCase):
                 "type": "attack",
                 "actor_id": "player",
                 "target_id": "goblin-1",
-                "attack_bonus": 5,
-                "damage": {"dice": "1d8", "modifier": 3},
+                "weapon_id": "longsword",
             },
             randbelow=self.sequence(19, 17, 3),
         )
