@@ -78,6 +78,34 @@ class SessionLoopTests(unittest.TestCase):
             response.rule_resolution,
         )
 
+    def test_failed_investigation_stays_in_exploration_without_combat_offer(self):
+        created = self.create()
+        narrator = Mock()
+        narrator.narrate.return_value = 'A busca não revela nada útil.'
+        orchestrator = GameOrchestrator(narrator, resolve_action=api.resolve_game_action)
+        investigate = created['available_actions'][1]
+        investigated = orchestrator.turn(GameTurnRequest(
+            campaign_id=created['campaign_id'],
+            state=created['state'],
+            player_input=investigate['player_input'],
+            action=investigate,
+            available_actions=created['available_actions'],
+        ))
+
+        check = investigated.available_actions[0]
+        with patch.object(api, 'roll_dice', return_value={'rolls': [1]}):
+            checked = orchestrator.turn(GameTurnRequest(
+                campaign_id=created['campaign_id'],
+                state=investigated.state,
+                player_input=check['player_input'],
+                action=check,
+                available_actions=investigated.available_actions,
+            ))
+
+        self.assertEqual(checked.state['scene']['type'], 'exploration')
+        self.assertNotIn('combat', checked.state)
+        self.assertNotIn('start_combat', [action['type'] for action in checked.available_actions])
+
     def test_start_combat_materializes_server_owned_encounter_and_returns_actions(self):
         created = self.create()
         narrator = Mock()

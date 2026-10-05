@@ -723,6 +723,7 @@ def resolve_game_action(action: dict[str, Any], state: dict[str, Any]) -> dict[s
     if (
         mechanical_action.get('type') == 'skill_check'
         and mechanical_action.get('skill') == 'perception'
+        and resolution.get('outcome', {}).get('success') is True
         and isinstance(scene, dict)
         and scene.get('id') == INITIAL_SCENE_ID
         and not (isinstance(combat, dict) and combat.get('active'))
