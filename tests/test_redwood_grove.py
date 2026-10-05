@@ -1,9 +1,12 @@
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import rule_engine.app as api
 from game.contracts import GameTurnRequest
 from game.orchestrator import GameOrchestrator, RuleResolutionError
+from game.contracts import PHB2024GuidedCharacterRequest
+from rule_engine.character import character_to_state
+from rule_engine.character_creation_phb2024 import build_phb2024_character
 
 
 class RedwoodGroveTests(unittest.TestCase):
@@ -11,8 +14,22 @@ class RedwoodGroveTests(unittest.TestCase):
         return api._redwood_grove_scene("character-1")
 
     def state(self):
+        character = build_phb2024_character(PHB2024GuidedCharacterRequest(
+            name='Redwood Tester', class_id='fighter', level=1, species_id='dwarf',
+            species_choices={}, background_id='farmer', alignment_id='neutral_good',
+            ability_method_id='standard_array',
+            base_abilities={'strength': 15, 'dexterity': 14, 'constitution': 13,
+                            'intelligence': 12, 'wisdom': 10, 'charisma': 8},
+            background_ability_increases={'strength': 2, 'constitution': 1},
+            abilities={'strength': 17, 'dexterity': 14, 'constitution': 14,
+                       'intelligence': 12, 'wisdom': 10, 'charisma': 8},
+            skills=['athletics', 'persuasion'], language_choices=['draconic', 'dwarvish'],
+            class_equipment_option='A', background_equipment_option='A', class_choices={},
+        ))
+        character_state = character_to_state(character)
+        character_state['id'] = 'character-1'
         return {
-            "character": {"id": "character-1"},
+            "character": character_state,
             "scene": self.scene(),
             "adventure": {"id": "dragon-delves-death-at-sunset", "redwood_samples": []},
         }
@@ -21,11 +38,40 @@ class RedwoodGroveTests(unittest.TestCase):
         actions = self.scene()["available_actions"]
         self.assertEqual(
             [action["type"] for action in actions],
-            ["adventure_action", "skill_check"],
+            ["adventure_action", "skill_check", "skill_check"],
         )
         self.assertEqual(actions[0]["intent"], "collect_bark_sample")
         self.assertEqual(actions[1]["dc"], 12)
         self.assertEqual(actions[1]["skill"], "persuasion")
+        self.assertEqual(actions[2]["dc"], 14)
+        self.assertEqual(actions[2]["skill"], "perception")
+
+    def test_risky_investigation_reveals_only_authorized_fact_on_success(self):
+        state = self.state()
+        action = state["scene"]["available_actions"][2]
+
+        with patch("rule_engine.app.roll_dice", return_value={"rolls": [20]}):
+            resolution = api.resolve_game_action(action, state)
+
+        self.assertTrue(resolution["outcome"]["success"])
+        self.assertEqual(
+            resolution["outcome"]["narrative_facts"],
+            [{"id": "redwood-grove-armin-tracks", "location": "redwood-grove-r4"}],
+        )
+        self.assertEqual(state["adventure"]["discoveries"], [
+            {"id": "redwood-grove-armin-tracks", "location": "redwood-grove-r4"},
+        ])
+
+    def test_risky_investigation_does_not_leak_protected_fact_on_failure(self):
+        state = self.state()
+        action = state["scene"]["available_actions"][2]
+
+        with patch("rule_engine.app.roll_dice", return_value={"rolls": [1]}):
+            resolution = api.resolve_game_action(action, state)
+
+        self.assertFalse(resolution["outcome"]["success"])
+        self.assertEqual(resolution["outcome"]["narrative_facts"], [])
+        self.assertEqual(state["adventure"].get("discoveries", []), [])
 
     def test_collect_bark_sample_is_a_server_owned_state_transition(self):
         state = self.state()

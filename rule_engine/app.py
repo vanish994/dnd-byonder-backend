@@ -592,6 +592,15 @@ def _redwood_grove_scene(character_id: str) -> dict[str, Any]:
                 'description': 'Tente convencer Kaynen a permitir a coleta.',
                 'player_input': 'Tento convencer Kaynen a permitir a coleta.',
             },
+            {
+                'type': 'skill_check',
+                'skill': 'perception',
+                'dc': 14,
+                'character_id': character_id,
+                'label': 'Examinar a entrada da toca',
+                'description': 'Procure pegadas próximas à entrada da toca sem presumir o que elas revelam.',
+                'player_input': 'Procuro pegadas próximas à entrada da toca.',
+            },
         ],
     }
 
@@ -933,6 +942,22 @@ def resolve_game_action(action: dict[str, Any], state: dict[str, Any]) -> dict[s
             'description': 'Explore a pista, presença ou anomalia que mais chamou sua atenção.',
             'player_input': 'Investigo a pista que mais chamou minha atenção.',
         }]
+    if (
+        mechanical_action.get('type') == 'skill_check'
+        and mechanical_action.get('skill') == 'perception'
+        and isinstance(scene, dict)
+        and scene.get('id') == REDWOOD_GROVE_SCENE_ID
+    ):
+        outcome = resolution.setdefault('outcome', {})
+        if outcome.get('success') is True:
+            fact = {'id': 'redwood-grove-armin-tracks', 'location': 'redwood-grove-r4'}
+            adventure = state.setdefault('adventure', {})
+            discoveries = adventure.setdefault('discoveries', [])
+            if fact not in discoveries:
+                discoveries.append(fact)
+            outcome['narrative_facts'] = [fact]
+        else:
+            outcome['narrative_facts'] = []
     return resolution
 
 

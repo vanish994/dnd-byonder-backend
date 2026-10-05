@@ -2,7 +2,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock
 
-from game.orchestrator import GameOrchestrator
+from game.orchestrator import GameOrchestrator, InvalidGameAction
 from game.resolution_gate import ResolutionGateDecision
 from game.contracts import GameTurnRequest
 from services.gemini_mj import GeminiMJClient, GeminiMJError
@@ -123,7 +123,7 @@ class ResolutionGateTests(unittest.TestCase):
                 "resolution": {"type": "skill_check", "skill": "stealth"},
             },
         )
-        with self.assertRaises(Exception):
+        with self.assertRaises(InvalidGameAction):
             orchestrator.turn(GameTurnRequest(
                 state={"scene": {"type": "exploration", "available_actions": [
                     {"type": "skill_check", "skill": "perception", "dc": 12},

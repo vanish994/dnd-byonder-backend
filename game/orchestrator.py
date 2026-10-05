@@ -40,7 +40,7 @@ def _bind_gate_intent(
         elif intent_type == "ability_check" and candidate.get("ability") == gate_resolution.get("ability"):
             matches.append(candidate)
     if len(matches) != 1:
-        raise RuleResolutionError("Resolution Gate intent is not authorized by current snapshot")
+        raise InvalidGameAction("Resolution Gate intent is not authorized by current snapshot")
     return deepcopy(matches[0])
 
 
