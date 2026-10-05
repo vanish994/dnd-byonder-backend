@@ -96,13 +96,42 @@ class ResolutionGateTests(unittest.TestCase):
                 "resolution": {"type": "skill_check", "skill": "stealth"},
             },
         )
+        authorized = {
+            "type": "skill_check",
+            "skill": "stealth",
+            "dc": 12,
+            "character_id": "character-1",
+        }
         response = orchestrator.turn(GameTurnRequest(
             campaign_id="c",
-            state={"character": {"id": "character-1"}, "scene": {"type": "exploration", "available_actions": []}},
+            state={"character": {"id": "character-1"}, "scene": {"type": "exploration", "available_actions": [authorized]}},
             player_input="Passo pelo guarda.",
+            available_actions=[authorized],
         ))
-        resolve.assert_called_once_with({"type": "skill_check", "skill": "stealth"}, response.state)
+        resolve.assert_called_once_with(authorized, response.state)
         self.assertTrue(response.rule_resolution["resolution_gate"]["requires_resolution"])
+
+    def test_resolution_intent_not_in_snapshot_fails_closed(self):
+        narrator = Mock()
+        resolve = Mock()
+        orchestrator = GameOrchestrator(
+            narrator,
+            resolve_action=resolve,
+            interpret_intent=lambda **_kwargs: {
+                "schema_version": "resolution-gate-v1",
+                "requires_resolution": True,
+                "resolution": {"type": "skill_check", "skill": "stealth"},
+            },
+        )
+        with self.assertRaises(Exception):
+            orchestrator.turn(GameTurnRequest(
+                state={"scene": {"type": "exploration", "available_actions": [
+                    {"type": "skill_check", "skill": "perception", "dc": 12},
+                ]}},
+                player_input="Passo sem fazer barulho.",
+            ))
+        resolve.assert_not_called()
+        narrator.narrate.assert_not_called()
 
 
 if __name__ == "__main__":

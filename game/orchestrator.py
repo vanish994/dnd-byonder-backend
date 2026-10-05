@@ -25,6 +25,46 @@ class NarrationError(RuntimeError):
         self.rule_resolution = rule_resolution
 
 
+def _bind_gate_intent(
+    gate_resolution: dict[str, Any],
+    available_actions: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Bind an LLM intent to exactly one server-authorized action."""
+    matches: list[dict[str, Any]] = []
+    intent_type = gate_resolution.get("type")
+    for candidate in available_actions:
+        if not isinstance(candidate, dict) or candidate.get("type") != intent_type:
+            continue
+        if intent_type == "skill_check" and candidate.get("skill") == gate_resolution.get("skill"):
+            matches.append(candidate)
+        elif intent_type == "ability_check" and candidate.get("ability") == gate_resolution.get("ability"):
+            matches.append(candidate)
+    if len(matches) != 1:
+        raise RuleResolutionError("Resolution Gate intent is not authorized by current snapshot")
+    return deepcopy(matches[0])
+
+
+def _bind_adventure_intent(
+    adventure_intent: dict[str, Any],
+    available_actions: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Bind a state-changing adventure intent to one canonical action."""
+    matches = [
+        candidate for candidate in available_actions
+        if isinstance(candidate, dict)
+        and candidate.get("type") == "adventure_action"
+        and candidate.get("intent") == adventure_intent.get("intent")
+    ]
+    if len(matches) != 1:
+        raise RuleResolutionError("Adventure intent is not authorized by current snapshot")
+    return deepcopy(matches[0])
+
+
+def acknowledge_intent(_player_input: str, _state: dict[str, Any]) -> str:
+    """Acknowledge free text without asserting an unresolved consequence."""
+    return "Sua intenção foi registrada. Nenhuma consequência mecânica foi resolvida neste momento."
+
+
 class GameOrchestrator:
     def __init__(
         self,
@@ -62,9 +102,15 @@ class GameOrchestrator:
             except Exception as exc:
                 raise RuleResolutionError("Resolution Gate could not be evaluated") from exc
             if resolution_gate.get("requires_resolution") is True:
-                action = resolution_gate.get("resolution")
-                if not isinstance(action, dict):
+                gate_resolution = resolution_gate.get("resolution")
+                if not isinstance(gate_resolution, dict):
                     raise RuleResolutionError("Resolution Gate returned no resolution request")
+                action = _bind_gate_intent(gate_resolution, available_actions)
+            elif isinstance(resolution_gate.get("adventure_action"), dict):
+                action = _bind_adventure_intent(
+                    resolution_gate["adventure_action"],
+                    available_actions,
+                )
 
         if action is None:
             resolution = {
@@ -98,20 +144,26 @@ class GameOrchestrator:
             player_input=request.player_input,
             rule_resolution=resolution,
         )
-        try:
-            narration = self.narrator.narrate(
-                campaign_id=request.campaign_id,
-                state=state,
-                player_input=request.player_input,
-                rule_resolution=resolution,
-                available_actions=available_actions,
-                request_id=request_id,
-            )
-        except NarratorError:
-            narration = fallback_narration(resolution, request.player_input)
-            narration_status = "unavailable"
-        else:
+        if resolution.get("status") != "resolved":
+            narration = acknowledge_intent(request.player_input, state)
+            # Keep the public contract compatible: the response is available,
+            # but it was produced deterministically without the narrator.
             narration_status = "available"
+        else:
+            try:
+                narration = self.narrator.narrate(
+                    campaign_id=request.campaign_id,
+                    state=state,
+                    player_input=request.player_input,
+                    rule_resolution=resolution,
+                    available_actions=available_actions,
+                    request_id=request_id,
+                )
+            except NarratorError:
+                narration = fallback_narration(resolution, request.player_input)
+                narration_status = "unavailable"
+            else:
+                narration_status = "available"
 
         record_narration(state, narration)
         scene = state.get("scene")

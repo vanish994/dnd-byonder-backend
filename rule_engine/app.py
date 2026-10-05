@@ -100,6 +100,7 @@ CHARACTER_RULE_ID = 'character.v1'
 RULE_RESOLUTION_SCHEMA_VERSION = 'rule-resolution-v1'
 INITIAL_SCENE_ID = 'intro'
 INITIAL_ENCOUNTER_ID = 'intro-ambush'
+REDWOOD_GROVE_SCENE_ID = 'redwood-grove-r3'
 ACTION_PRESENTATION_FIELDS = {'label', 'description', 'player_input'}
 TextAction = constr(strict=True, min_length=1, max_length=200)
 
@@ -358,8 +359,17 @@ class SkillCheckAction(BaseModel):
         extra = 'forbid'
 
 
+class AdventureAction(BaseModel):
+    type: Literal['adventure_action']
+    intent: Literal['collect_bark_sample']
+    tree_id: StrictStr = Field(min_length=1, max_length=32)
+
+    class Config:
+        extra = 'forbid'
+
+
 class ResolveRequest(BaseModel):
-    action: TextAction | CreateCharacterAction | SkillCheckAction | AbilityCheckAction | SavingThrowAction | AttackAction | StartCombatAction | MoveAction | EndTurnAction | RestAction | ResourceAction | ExperienceAction | LevelUpAction | SecondWindAction | ActionSurgeAction | InventoryAction
+    action: TextAction | CreateCharacterAction | SkillCheckAction | AdventureAction | AbilityCheckAction | SavingThrowAction | AttackAction | StartCombatAction | MoveAction | EndTurnAction | RestAction | ResourceAction | ExperienceAction | LevelUpAction | SecondWindAction | ActionSurgeAction | InventoryAction
     state: dict[str, Any] = Field(default_factory=dict)
     rule_ids: list[str] = Field(default_factory=list)
 
@@ -557,6 +567,34 @@ def _initial_scene(character_id: str) -> dict[str, Any]:
     }
 
 
+def _redwood_grove_scene(character_id: str) -> dict[str, Any]:
+    """Return the first server-owned Redwood Grove snapshot."""
+    return {
+        'id': REDWOOD_GROVE_SCENE_ID,
+        'type': 'exploration',
+        'title': 'Redwood Grove',
+        'available_actions': [
+            {
+                'type': 'adventure_action',
+                'intent': 'collect_bark_sample',
+                'tree_id': 'r3',
+                'label': 'Coletar amostra da árvore',
+                'description': 'Colete uma amostra da casca da árvore disponível.',
+                'player_input': 'Coleto uma amostra da casca desta árvore.',
+            },
+            {
+                'type': 'skill_check',
+                'skill': 'persuasion',
+                'dc': 12,
+                'character_id': character_id,
+                'label': 'Convencer Kaynen',
+                'description': 'Tente convencer Kaynen a permitir a coleta.',
+                'player_input': 'Tento convencer Kaynen a permitir a coleta.',
+            },
+        ],
+    }
+
+
 def _guided_character_preview(body: GuidedCharacterRequest) -> tuple[dict[str, Any], dict[str, Any]]:
     try:
         character = build_guided_character(body)
@@ -657,6 +695,60 @@ def create_phb2024_character(
         raise_campaign_http_error(exc)
 
 
+def resolve_adventure_action(body: ResolveRequest) -> dict[str, Any]:
+    """Resolve a bounded, non-dice adventure transition from server state."""
+    action = body.action
+    if not isinstance(action, AdventureAction):
+        raise TypeError('resolve_adventure_action requires an adventure action')
+    scene = body.state.get('scene')
+    if not isinstance(scene, dict) or scene.get('id') != REDWOOD_GROVE_SCENE_ID:
+        raise ValueError('adventure action is unavailable in this scene')
+
+    authorized = [
+        candidate for candidate in scene.get('available_actions', [])
+        if isinstance(candidate, dict)
+        and candidate.get('type') == 'adventure_action'
+        and candidate.get('intent') == action.intent
+        and candidate.get('tree_id') == action.tree_id
+    ]
+    if len(authorized) != 1:
+        raise ValueError('adventure action is not authorized by the current snapshot')
+
+    adventure = body.state.setdefault('adventure', {})
+    samples = adventure.setdefault('redwood_samples', [])
+    if action.tree_id in samples:
+        raise ValueError('redwood sample was already collected')
+    samples.append(action.tree_id)
+    scene['available_actions'] = [
+        candidate for candidate in scene.get('available_actions', [])
+        if not (
+            isinstance(candidate, dict)
+            and candidate.get('type') == 'adventure_action'
+            and candidate.get('intent') == action.intent
+            and candidate.get('tree_id') == action.tree_id
+        )
+    ]
+    return {
+        'schema_version': RULE_RESOLUTION_SCHEMA_VERSION,
+        'status': 'resolved',
+        'action': {
+            'type': action.type,
+            'intent': action.intent,
+            'tree_id': action.tree_id,
+        },
+        'check': {},
+        'rolls': [],
+        'outcome': {
+            'state_changed': True,
+            'sample_collected': True,
+            'narrative_facts': [
+                {'id': 'redwood-bark-sample-collected', 'tree_id': action.tree_id},
+            ],
+        },
+        'rules_used': ['dragon-delves.redwood-grove.adventure-action.v1'],
+    }
+
+
 def resolve_game_action(action: dict[str, Any], state: dict[str, Any]) -> dict[str, Any]:
     """Validate and resolve a structured action using the existing Rule Engine."""
     mechanical_action = {
@@ -664,15 +756,7 @@ def resolve_game_action(action: dict[str, Any], state: dict[str, Any]) -> dict[s
         if key not in ACTION_PRESENTATION_FIELDS
     }
     if mechanical_action.get('type') in {'skill_check', 'ability_check'} and 'dc' not in mechanical_action:
-        character = state.get('character')
-        character_id = character.get('id') if isinstance(character, dict) else None
-        if not isinstance(character_id, str) or not character_id:
-            raise ValueError('resolution requires a server-owned character')
-        mechanical_action = {
-            **mechanical_action,
-            'dc': 10,
-            'character_id': character_id,
-        }
+        raise ValueError('resolution requires a server-authorized DC')
     if mechanical_action.get('type') == 'attack':
         actor_id = mechanical_action.get('actor_id')
         target_id = mechanical_action.get('target_id')
@@ -1983,6 +2067,8 @@ def resolve_request(
             return resolve_create_character(body)
         if isinstance(body.action, SkillCheckAction):
             return resolve_skill_check(body, randbelow=randbelow)
+        if isinstance(body.action, AdventureAction):
+            return resolve_adventure_action(body)
         if isinstance(body.action, StartCombatAction):
             return resolve_start_combat(body, randbelow=randbelow)
         if isinstance(body.action, MoveAction):

@@ -28,15 +28,25 @@ class ResolutionRequest(BaseModel):
             raise ValueError("ability_check cannot include skill")
 
 
+class AdventureIntent(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["adventure_action"]
+    intent: Literal["collect_bark_sample"]
+
+
 class ResolutionGateDecision(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     schema_version: Literal["resolution-gate-v1"] = RESOLUTION_GATE_SCHEMA_VERSION
     requires_resolution: StrictBool
     resolution: ResolutionRequest | None = None
+    adventure_action: AdventureIntent | None = None
 
     def model_post_init(self, _context: object) -> None:
         if self.requires_resolution and self.resolution is None:
             raise ValueError("resolution is required when requires_resolution is true")
         if not self.requires_resolution and self.resolution is not None:
             raise ValueError("resolution must be omitted when requires_resolution is false")
+        if self.requires_resolution and self.adventure_action is not None:
+            raise ValueError("adventure_action cannot accompany a mechanical resolution")

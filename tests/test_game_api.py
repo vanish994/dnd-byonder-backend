@@ -90,7 +90,7 @@ class GameApiTests(unittest.TestCase):
         self.assertEqual(result['session_id'], store.last_call['session_id'].__str__())
         self.assertNotIn('state', store.last_call['request_payload'])
         self.assertEqual(result['rule_resolution']['schema_version'], 'rule-resolution-v1')
-        self.assertEqual(result['narration_status'], 'unavailable')
+        self.assertEqual(result['narration_status'], 'available')
 
     def test_client_cannot_construct_turn_with_state_campaign_or_available_actions(self):
         for extra in (

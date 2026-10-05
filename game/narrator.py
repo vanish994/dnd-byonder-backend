@@ -90,6 +90,12 @@ def _mechanical_summary(rule_resolution: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in summary.items() if value not in ({}, None)}
 
 
+def _narration_policy(rule_resolution: dict[str, Any]) -> str:
+    if rule_resolution.get("status") == "resolved":
+        return "resolved_consequence_only"
+    return "acknowledgment_only"
+
+
 def _narrative_context(state: dict[str, Any]) -> dict[str, Any]:
     existing = _record(state.get("narrative_context"))
     return {
@@ -158,6 +164,7 @@ def build_narrative_context(
     context["combat"] = _combat_context(state)
     context["current_input"] = player_input
     context["current_mechanics"] = _mechanical_summary(rule_resolution)
+    context["narration_policy"] = _narration_policy(rule_resolution)
     if available_actions is not None:
         context["available_actions"] = deepcopy(available_actions)
     return context

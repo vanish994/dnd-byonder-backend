@@ -48,6 +48,25 @@ class GeminiMJTests(unittest.TestCase):
         )
         self.assertEqual(result, "Você avança em silêncio.")
 
+    def test_interpret_can_return_only_server_owned_adventure_intent(self):
+        response = SimpleNamespace(text='{"schema_version":"resolution-gate-v1","requires_resolution":false,"adventure_action":{"type":"adventure_action","intent":"collect_bark_sample"}}')
+        client, models = self.make_client(response=response)
+
+        result = client.interpret(
+            campaign_id="campaign",
+            state={"scene": {"id": "redwood-grove-r3"}},
+            player_input="Coleto uma amostra da casca.",
+        )
+
+        self.assertFalse(result["requires_resolution"])
+        self.assertEqual(result["adventure_action"], {
+            "type": "adventure_action",
+            "intent": "collect_bark_sample",
+        })
+        schema = models.generate_content.call_args.kwargs["config"].response_json_schema
+        self.assertFalse(schema["additionalProperties"])
+        self.assertFalse(schema["properties"]["adventure_action"]["additionalProperties"])
+
     def test_invalid_response_fails_closed(self):
         client, _ = self.make_client(response=SimpleNamespace(text='{"success":true}'))
         with self.assertRaises(GeminiMJError):

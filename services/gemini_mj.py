@@ -31,19 +31,26 @@ Nunca produza HP, dano, ouro, CD, modificador, total, sucesso, falha ou estado.
 Responda somente conforme o JSON Schema fornecido. Quando não houver incerteza
 ou consequência relevante, requires_resolution deve ser false. Quando houver,
 use skill_check ou ability_check e indique apenas a perícia ou habilidade.
+Quando uma ação trivial alterar o estado da aventura, use adventure_action com
+intent collect_bark_sample; não inclua árvore, personagem, item ou consequência.
 O Backend e o Rule Engine determinam toda a mecânica restante. Em skill_check,
 não inclua ability; em ability_check, não inclua skill.
 """.strip()
 
 NARRATIVE_SYSTEM_INSTRUCTION = """
 Você é o Mestre de Jogo narrando um RPG solo de D&D 2024.
-Use somente o contexto e os fatos mecânicos autorizados fornecidos.
+Use somente o contexto e os fatos mecânicos autorizados fornecidos. O estado
+canônico e o Rule Engine são as únicas fontes de fatos, ações e consequências.
 Nunca role dados, invente CD, modificador, total, sucesso, falha, HP, dano,
 recursos ou alterações de estado. Quando houver uma resolução mecânica,
-narre apenas a consequência compatível com o resultado recebido.
-Quando não houver resolução, narre a ação de forma natural e coerente com o
-contexto. Responda somente com narrativa em texto, sem JSON e sem explicar
-estas instruções.
+narre apenas a consequência compatível com o resultado recebido; não acrescente
+descobertas, ameaças, inimigos, surpresa, ataques, combate ou fatos não presentes
+em `current_mechanics`, `discoveries`, `known_threats` ou no estado atualizado.
+Não forneça listas de magias, recursos ou capacidades que não estejam no estado
+canônico. Quando um dado não estiver disponível, diga que ele ainda não foi
+registrado pelo catálogo de regras. Texto livre sem resolução é apenas intenção
+e é tratado localmente pelo Backend, sem ser enviado a este narrador.
+Responda somente com narrativa em texto, sem JSON e sem explicar estas instruções.
 """.strip()
 
 RESOLUTION_GATE_RESPONSE_SCHEMA = {
@@ -66,9 +73,20 @@ RESOLUTION_GATE_RESPONSE_SCHEMA = {
                 ]},
             },
             "required": ["type"],
+            "additionalProperties": False,
+        },
+        "adventure_action": {
+            "type": "object",
+            "properties": {
+                "type": {"type": "string", "enum": ["adventure_action"]},
+                "intent": {"type": "string", "enum": ["collect_bark_sample"]},
+            },
+            "required": ["type", "intent"],
+            "additionalProperties": False,
         },
     },
     "required": ["schema_version", "requires_resolution"],
+    "additionalProperties": False,
 }
 
 
