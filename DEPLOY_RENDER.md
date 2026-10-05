@@ -69,6 +69,10 @@ A resposta inclui `campaign_id`, `session_id`, `revision`, `state` vindo do snap
 
 A resolução mecânica acontece antes da chamada ao Groq. Se o Groq responder com erro, exceder o timeout ou retornar conteúdo inválido, o endpoint ainda retorna HTTP 200 com a resolução mecânica preservada e `narration_status: "unavailable"`. O Rule Engine continua sendo a autoridade para dados, modificadores, CD/DC, CA, dano, HP, estado e regras usadas.
 
+## Abertura narrativa variável
+
+Na primeira narração de cada campanha, o Backend fornece ao narrador um seed aleatório e a identidade narrativa do personagem (nome, classe, espécie e origem). O prompt pede cenário, atmosfera e gancho originais; o seed é consumido após essa resposta e não é reutilizado em turnos seguintes. Essa geração afeta apenas texto: a IA não cria testes, resultados, inimigos mecanicamente presentes ou alterações de estado. As ações e o encontro inicial continuam sendo definidos pelo Rule Engine.
+
 ## Segurança operacional
 
 - Não faça commit de `.env`, chaves ou tokens.

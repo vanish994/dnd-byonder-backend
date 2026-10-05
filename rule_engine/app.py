@@ -509,16 +509,16 @@ def _initial_scene_actions(character_id: str) -> list[dict[str, Any]]:
             'ability': 'wisdom',
             'dc': 10,
             'character_id': character_id,
-            'label': 'Observar a clareira',
-            'description': 'Procure sinais, sons e detalhes importantes ao redor.',
-            'player_input': 'Observo cuidadosamente a clareira.',
+            'label': 'Perceber o ambiente',
+            'description': 'Preste atenção a um detalhe, som ou mudança que chame sua atenção.',
+            'player_input': 'Observo atentamente o que se destaca ao meu redor.',
         },
         {
             'type': 'narrative_intent',
-            'intent': 'investigate_noise',
-            'label': 'Investigar o ruído',
-            'description': 'Siga o som e descreva como você investiga. O Mestre reage antes de pedir qualquer rolagem.',
-            'player_input': 'Investigo o ruído entre as árvores.',
+            'intent': 'investigate_clue',
+            'label': 'Investigar uma pista',
+            'description': 'Explore a pista, presença ou anomalia que mais chamou sua atenção.',
+            'player_input': 'Investigo a pista que mais chamou minha atenção.',
         },
     ]
 
@@ -544,8 +544,8 @@ def _initial_scene(character_id: str) -> dict[str, Any]:
     return {
         'id': INITIAL_SCENE_ID,
         'type': 'exploration',
-        'title': 'A clareira silenciosa',
-        'description': 'A estrada termina em uma clareira. Um ruído se move entre as árvores.',
+        'title': 'Abertura',
+        'opening_seed': uuid.uuid4().hex,
         'available_actions': _initial_scene_actions(character_id),
     }
 
@@ -667,7 +667,7 @@ def resolve_game_action(action: dict[str, Any], state: dict[str, Any]) -> dict[s
         ):
             raise ValueError('game attacks require a combat actor_id and target_id')
     if mechanical_action.get('type') == 'narrative_intent':
-        if mechanical_action.get('intent') != 'investigate_noise':
+        if mechanical_action.get('intent') != 'investigate_clue':
             raise ValueError('unknown narrative intent')
         scene = state.get('scene')
         if not isinstance(scene, dict) or scene.get('id') != INITIAL_SCENE_ID:
@@ -678,8 +678,8 @@ def resolve_game_action(action: dict[str, Any], state: dict[str, Any]) -> dict[s
             'dc': 10,
             'character_id': state.get('character', {}).get('id'),
             'label': 'Fazer teste de Percepção',
-            'description': 'O Mestre reagiu à sua investigação. Agora role Percepção para descobrir o que está acontecendo.',
-            'player_input': 'Faço um teste de Percepção para entender o ruído.',
+            'description': 'A pista que você escolheu investigar exige atenção. Faça um teste de Percepção.',
+            'player_input': 'Faço um teste de Percepção para investigar a pista.',
         }]
         return {
             'schema_version': RULE_RESOLUTION_SCHEMA_VERSION,

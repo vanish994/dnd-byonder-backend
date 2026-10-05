@@ -61,6 +61,20 @@ def _combat_context(state: dict[str, Any]) -> dict[str, Any] | None:
     }
 
 
+def _character_context(state: dict[str, Any]) -> dict[str, Any]:
+    character = _record(state.get("character"))
+    character_class = _record(character.get("class"))
+    fields = {
+        "name": character.get("name"),
+        "class": character_class.get("id"),
+        "level": character_class.get("level", character.get("level")),
+        "species": character.get("species_id"),
+        "background": character.get("background_id"),
+        "alignment": character.get("alignment_id"),
+    }
+    return {key: value for key, value in fields.items() if isinstance(value, (str, int))}
+
+
 def _mechanical_summary(rule_resolution: dict[str, Any]) -> dict[str, Any]:
     if rule_resolution.get("status") != "resolved":
         return {
@@ -136,6 +150,11 @@ def build_narrative_context(
 ) -> dict[str, Any]:
     """Build bounded, structured context that the narrator is allowed to see."""
     context = _narrative_context(state)
+    context["character"] = _character_context(state)
+    scene = _record(state.get("scene"))
+    opening_seed = scene.get("opening_seed")
+    if isinstance(opening_seed, str):
+        context["opening_seed"] = opening_seed
     context["combat"] = _combat_context(state)
     context["current_input"] = player_input
     context["current_mechanics"] = _mechanical_summary(rule_resolution)

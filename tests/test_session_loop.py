@@ -48,7 +48,10 @@ class SessionLoopTests(unittest.TestCase):
             [action['type'] for action in created['available_actions']],
             ['ability_check', 'narrative_intent'],
         )
-        self.assertEqual(created['available_actions'][1]['intent'], 'investigate_noise')
+        self.assertEqual(created['available_actions'][1]['intent'], 'investigate_clue')
+        self.assertEqual(created['state']['scene']['title'], 'Abertura')
+        self.assertTrue(created['state']['scene']['opening_seed'])
+        self.assertNotEqual(self.create()['state']['scene']['opening_seed'], created['state']['scene']['opening_seed'])
 
     def test_ability_action_preserves_scene_and_updates_state(self):
         created = self.create()

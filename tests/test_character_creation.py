@@ -114,7 +114,7 @@ class CharacterCreationTests(unittest.TestCase):
         self.assertEqual(created["state"]["encounter"]["id"], "intro-ambush")
         self.assertEqual([action["type"] for action in created["available_actions"]], ["ability_check", "narrative_intent"])
         investigate_action = created["available_actions"][1]
-        self.assertEqual(investigate_action["intent"], "investigate_noise")
+        self.assertEqual(investigate_action["intent"], "investigate_clue")
         self.assertEqual(str(UUID(created["campaign_id"])), created["campaign_id"])
         self.assertNotEqual(created["character"]["id"], preview["character"]["id"])
 
@@ -127,7 +127,9 @@ class CharacterCreationTests(unittest.TestCase):
         ))
         self.assertEqual(first_turn.campaign_id, created["campaign_id"])
         self.assertEqual(first_turn.state["character"], created["state"]["character"])
-        self.assertEqual(first_turn.state["scene"], created["state"]["scene"])
+        expected_scene = dict(created["state"]["scene"])
+        expected_scene.pop("opening_seed")
+        self.assertEqual(first_turn.state["scene"], expected_scene)
         self.assertIn("narrative_context", first_turn.state)
         self.assertEqual(first_turn.available_actions, created["available_actions"])
         self.assertEqual(first_turn.rule_resolution["schema_version"], "rule-resolution-v1")

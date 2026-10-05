@@ -2,7 +2,7 @@ import json
 import unittest
 import httpx
 
-from services.groq_narrator import GroqNarratorClient, GroqNarratorError
+from services.groq_narrator import GroqNarratorClient, GroqNarratorError, NARRATOR_SYSTEM_INSTRUCTION
 
 
 class GroqNarratorTests(unittest.TestCase):
@@ -40,6 +40,35 @@ class GroqNarratorTests(unittest.TestCase):
         self.assertIn("narrative-context-v1", content)
         self.assertNotIn("must-not-reach-provider", content)
         self.assertNotIn("groq-secret", json.dumps(captured["body"]))
+
+    def test_campaign_opening_uses_character_and_unique_seed_only_for_narrative(self):
+        captured = {}
+
+        def handler(request):
+            captured["body"] = json.loads(request.content)
+            return httpx.Response(200, json={"choices": [{"message": {"content": "A aventura começa."}}]})
+
+        self.make_client(handler).narrate(
+            campaign_id="campaign_123",
+            state={
+                "character": {
+                    "name": "Lume",
+                    "class": {"id": "wizard", "level": 1},
+                    "species_id": "elf",
+                    "background_id": "sage",
+                    "abilities": {"intelligence": 15},
+                },
+                "scene": {"id": "intro", "title": "Abertura", "opening_seed": "opening-unique-42"},
+            },
+            player_input="Começar a aventura.",
+            rule_resolution={"schema_version": "rule-resolution-v1", "status": "needs_rule_validation"},
+        )
+
+        content = captured["body"]["messages"][1]["content"]
+        self.assertIn("opening-unique-42", content)
+        self.assertIn('"background":"sage"', content)
+        self.assertIn("escreva uma abertura original", NARRATOR_SYSTEM_INSTRUCTION)
+        self.assertNotIn("abilities", content)
 
     def test_http_429_is_fail_closed(self):
         with self.assertRaises(GroqNarratorError):

@@ -2,6 +2,7 @@ import unittest
 from unittest.mock import Mock
 
 from game.contracts import GameTurnRequest
+from game.narrator import build_narrative_context
 from game.orchestrator import GameOrchestrator, InvalidGameAction
 from services.narrator import NarratorError
 
@@ -206,6 +207,38 @@ class GameOrchestratorTests(unittest.TestCase):
         self.assertEqual(context["recent_dialogue"][-1]["text"], "A cena continua.")
         self.assertNotIn("hp", context["recent_events"][0])
         self.assertEqual(second.rule_resolution["status"], "needs_rule_validation")
+
+    def test_opening_seed_is_one_shot_and_character_context_is_narrative_only(self):
+        initial_state = {
+            "character": {
+                "name": "Lume",
+                "class": {"id": "wizard", "level": 1},
+                "species_id": "elf",
+                "background_id": "sage",
+                "abilities": {"intelligence": 15},
+            },
+            "scene": {"id": "intro", "title": "Abertura", "opening_seed": "opening-unique-42"},
+        }
+        context = build_narrative_context(
+            state=initial_state,
+            player_input="Começar a aventura.",
+            rule_resolution={"status": "needs_rule_validation"},
+        )
+        self.assertEqual(context["opening_seed"], "opening-unique-42")
+        self.assertEqual(context["character"]["background"], "sage")
+        self.assertNotIn("abilities", context["character"])
+
+        first = self.orchestrator.turn(GameTurnRequest(
+            state=initial_state,
+            player_input="Começar a aventura.",
+        ))
+        self.assertNotIn("opening_seed", first.state["scene"])
+        second_context = build_narrative_context(
+            state=first.state,
+            player_input="O que vejo?",
+            rule_resolution={"status": "needs_rule_validation"},
+        )
+        self.assertNotIn("opening_seed", second_context)
 
 
 if __name__ == "__main__":

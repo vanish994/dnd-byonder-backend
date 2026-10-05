@@ -87,6 +87,9 @@ class GameOrchestrator:
             narration_status = "available"
 
         record_narration(state, narration)
+        scene = state.get("scene")
+        if isinstance(scene, dict):
+            scene.pop("opening_seed", None)
         return GameTurnResponse(
             campaign_id=request.campaign_id,
             narration=narration,
