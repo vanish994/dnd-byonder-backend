@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Any, Literal
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, StrictInt, StrictStr, field_validator
 
@@ -137,8 +138,33 @@ class CharacterCreationResponse(CharacterValidationResponse):
     available_actions: list[dict[str, Any]]
 
 
+class PHB2024CharacterCreationResponse(BaseModel):
+    schema_version: Literal['character-creation-phb2024-v1']
+    ruleset: Literal['dnd-2024-phb']
+    valid: Literal[True]
+    character: dict[str, Any]
+    derived: dict[str, Any]
+    rule_resolution: dict[str, Any]
+    campaign_id: str
+    session_id: str
+    revision: StrictInt
+    state: dict[str, Any]
+    available_actions: list[dict[str, Any]]
+
+
+class SessionTurnRequest(BaseModel):
+    """Public command for a session; canonical state never arrives from the client."""
+
+    model_config = ConfigDict(extra='forbid')
+
+    session_id: UUID
+    expected_revision: StrictInt = Field(ge=0)
+    player_input: StrictStr = Field(min_length=1, max_length=4000)
+    action: dict[str, Any] | None = None
+
+
 class GameTurnRequest(BaseModel):
-    campaign_id: StrictStr = Field(default="", max_length=128)
+    campaign_id: StrictStr = Field(default='', max_length=128)
     state: dict[str, Any] = Field(default_factory=dict)
     player_input: StrictStr = Field(min_length=1, max_length=4000)
     action: dict[str, Any] | None = None
@@ -152,3 +178,20 @@ class GameTurnResponse(BaseModel):
     rule_resolution: dict[str, Any]
     state: dict[str, Any]
     available_actions: list[dict[str, Any]]
+
+
+class PersistedGameTurnResponse(GameTurnResponse):
+    session_id: str
+    revision: StrictInt
+
+
+class SessionResumeResponse(BaseModel):
+    campaign_id: str
+    session_id: str
+    ruleset: Literal['dnd-2024-phb']
+    revision: StrictInt
+    character: dict[str, Any]
+    derived: dict[str, Any]
+    state: dict[str, Any]
+    available_actions: list[dict[str, Any]]
+    history: list[dict[str, Any]]

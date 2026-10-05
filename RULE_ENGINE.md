@@ -51,10 +51,10 @@ Ataques múltiplos são transacionais: uma falha em qualquer ataque restaura o e
 ```text
 GROQ_API_KEY=<secret do Google Groq>
 GROQ_MODEL=llama-3.3-70b-versatile
-GROQ_TIMEOUT_SECONDS=30
+GROQ_TIMEOUT_SECONDS=20
 GROQ_MAX_OUTPUT_TOKENS=512
 GROQ_TEMPERATURE=0.7
 ```
 
 
-O endpoint retorna `401` para chave do backend inválida, `422` para ação estruturada inválida, `503` quando o provider selecionado não está configurado e `502` em falha do Rule Engine/narrador. Em falha do narrador, o corpo do erro preserva `rule_resolution` sem fabricar uma narrativa.
+O endpoint retorna `401` para chave do backend inválida, `422` para ação estruturada inválida e `503` quando a persistência ou um recurso obrigatório não está configurado. Em falha do narrador, preserva a resolução mecânica e retorna HTTP 200 com `narration_status: unavailable` e fallback local, sem fabricar resultado de regras.

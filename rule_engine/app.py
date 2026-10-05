@@ -19,13 +19,27 @@ from game.contracts import (
     GameTurnRequest,
     GameTurnResponse,
     GuidedCharacterRequest,
+    PHB2024CharacterCreationResponse,
     PHB2024GuidedCharacterRequest,
+    PersistedGameTurnResponse,
+    SessionResumeResponse,
+    SessionTurnRequest,
 )
 from game.orchestrator import (
     GameOrchestrator,
     InvalidGameAction,
     NarrationError,
     RuleResolutionError,
+)
+from game.persistence import (
+    CampaignNotFound,
+    CampaignStore,
+    IdempotencyConflict,
+    PersistenceNotConfigured,
+    PersistenceUnavailable,
+    RevisionConflict,
+    SessionUnauthorized,
+    SnapshotIntegrityError,
 )
 from rule_engine.classes import class_attack_count, class_features, class_resource_maximum, class_resource_recovery, class_resource_recovery_amount
 from rule_engine.conditions import (
@@ -360,6 +374,30 @@ def authorize(x_api_key: str | None):
         raise HTTPException(status_code=401, detail='invalid api key')
 
 
+def get_campaign_store() -> CampaignStore:
+    return CampaignStore(os.getenv('DATABASE_URL', ''))
+
+
+def raise_campaign_http_error(exc: Exception) -> None:
+    if isinstance(exc, CampaignNotFound):
+        raise HTTPException(status_code=404, detail='session not found') from exc
+    if isinstance(exc, SessionUnauthorized):
+        raise HTTPException(status_code=401, detail='invalid session credential') from exc
+    if isinstance(exc, RevisionConflict):
+        raise HTTPException(
+            status_code=409,
+            detail={'code': 'STALE_REVISION', 'current_revision': exc.current_revision},
+        ) from exc
+    if isinstance(exc, IdempotencyConflict):
+        raise HTTPException(status_code=409, detail='idempotency key conflict') from exc
+    if isinstance(exc, (PersistenceNotConfigured, PersistenceUnavailable)):
+        raise HTTPException(status_code=503, detail='campaign persistence is unavailable') from exc
+    if isinstance(exc, SnapshotIntegrityError):
+        logger.error('CAMPAIGN_SNAPSHOT_INTEGRITY_ERROR')
+        raise HTTPException(status_code=500, detail='campaign state integrity check failed') from exc
+    raise exc
+
+
 def connect():
     if not DB_PATH.exists():
         raise HTTPException(status_code=500, detail='rules database not found')
@@ -581,20 +619,35 @@ def validate_phb2024_character(body: PHB2024GuidedCharacterRequest, x_api_key: s
     return preview
 
 
-@app.post('/v2/character/create')
-def create_phb2024_character(body: PHB2024GuidedCharacterRequest, x_api_key: str | None = Header(default=None)):
+@app.post('/v2/character/create', response_model=PHB2024CharacterCreationResponse)
+def create_phb2024_character(
+    body: PHB2024GuidedCharacterRequest,
+    x_api_key: str | None = Header(default=None),
+    x_session_token: str = Header(alias='X-Session-Token'),
+    idempotency_key: str = Header(alias='Idempotency-Key'),
+):
     authorize(x_api_key)
     preview, state = _phb2024_character_preview(body)
     character_id = preview['character']['id']
     scene = _initial_scene(character_id)
     state['scene'] = scene
     state['encounter'] = _initial_encounter()
-    return {
-        **preview,
-        'campaign_id': str(uuid.uuid4()),
-        'state': state,
-        'available_actions': scene['available_actions'],
-    }
+    try:
+        return get_campaign_store().create_campaign(
+            state=state,
+            creation_response=preview,
+            request_payload=body.model_dump(mode='json'),
+            idempotency_key=idempotency_key,
+            session_token=x_session_token,
+            ruleset='dnd-2024-phb',
+        )
+    except (
+        IdempotencyConflict,
+        PersistenceNotConfigured,
+        PersistenceUnavailable,
+        SessionUnauthorized,
+    ) as exc:
+        raise_campaign_http_error(exc)
 
 
 def resolve_game_action(action: dict[str, Any], state: dict[str, Any]) -> dict[str, Any]:
@@ -684,12 +737,40 @@ def resolve_game_action(action: dict[str, Any], state: dict[str, Any]) -> dict[s
     return resolution
 
 
+def _validate_snapshot_action(action: dict[str, Any] | None, state: dict[str, Any]) -> None:
+    if action is None:
+        return
+
+    combat = state.get('combat')
+    if isinstance(combat, dict) and combat.get('active') and isinstance(combat.get('available_actions'), list):
+        authorized_actions = combat['available_actions']
+    else:
+        scene = state.get('scene')
+        authorized_actions = scene.get('available_actions', []) if isinstance(scene, dict) else []
+
+    requested = {key: value for key, value in action.items() if key not in ACTION_PRESENTATION_FIELDS}
+    for authorized in authorized_actions:
+        if not isinstance(authorized, dict):
+            continue
+        canonical = {key: value for key, value in authorized.items() if key not in ACTION_PRESENTATION_FIELDS}
+        if requested == canonical:
+            return
+        # Movement distance is a player choice; the Rule Engine still validates
+        # its type, remaining speed, and resulting position against canonical state.
+        if canonical.get('type') == 'move' and set(requested) == set(canonical) | {'distance'}:
+            candidate = {key: value for key, value in requested.items() if key != 'distance'}
+            distance = requested.get('distance')
+            if candidate == canonical and isinstance(distance, int) and not isinstance(distance, bool) and distance >= 0:
+                return
+    raise InvalidGameAction('turn action is not authorized by the current server snapshot')
+
+
 def build_game_orchestrator() -> GameOrchestrator:
     if not GROQ_API_KEY or not GROQ_MODEL or not GROQ_BASE_URL:
         logger.warning("NARRATOR_CONFIGURATION_MISSING fallback=local")
         return GameOrchestrator(UnavailableNarratorProvider(), resolve_action=resolve_game_action)
     try:
-        timeout = float(os.getenv('GROQ_TIMEOUT_SECONDS', '30'))
+        timeout = float(os.getenv('GROQ_TIMEOUT_SECONDS', '20'))
         max_output_tokens = int(os.getenv('GROQ_MAX_OUTPUT_TOKENS', '512'))
         temperature = float(os.getenv('GROQ_TEMPERATURE', '0.7'))
         narrator = GroqNarratorClient(
@@ -706,31 +787,125 @@ def build_game_orchestrator() -> GameOrchestrator:
     return GameOrchestrator(narrator, resolve_action=resolve_game_action)
 
 
-@app.post('/v1/game/turn', response_model=GameTurnResponse)
+@app.get('/v1/sessions/{session_id}', response_model=SessionResumeResponse)
+def resume_session(
+    session_id: uuid.UUID,
+    x_api_key: str | None = Header(default=None),
+    x_session_token: str = Header(alias='X-Session-Token'),
+):
+    authorize(x_api_key)
+    try:
+        stored = get_campaign_store().load_session(session_id=session_id, session_token=x_session_token)
+    except (
+        CampaignNotFound,
+        PersistenceNotConfigured,
+        PersistenceUnavailable,
+        SessionUnauthorized,
+        SnapshotIntegrityError,
+    ) as exc:
+        raise_campaign_http_error(exc)
+
+    state = stored['state']
+    character = state.get('character')
+    if not isinstance(character, dict):
+        raise HTTPException(status_code=500, detail='campaign character is missing')
+    try:
+        _character, derived = derive_character(character)
+    except (TypeError, ValueError, ValidationError) as exc:
+        logger.error('CAMPAIGN_CHARACTER_INTEGRITY_ERROR')
+        raise HTTPException(status_code=500, detail='campaign character integrity check failed') from exc
+
+    combat = state.get('combat')
+    scene = state.get('scene')
+    available_actions = []
+    if isinstance(combat, dict) and combat.get('active') and isinstance(combat.get('available_actions'), list):
+        available_actions = combat['available_actions']
+    elif isinstance(scene, dict) and isinstance(scene.get('available_actions'), list):
+        available_actions = scene['available_actions']
+    context = state.get('narrative_context')
+    dialogue = context.get('recent_dialogue', []) if isinstance(context, dict) else []
+    history = [
+        {
+            'id': f"{stored['session_id']}-{index}",
+            'speaker': 'mestre' if item.get('speaker') == 'mestre' else 'voce',
+            'text': item['text'],
+            'timestamp': index,
+        }
+        for index, item in enumerate(dialogue)
+        if isinstance(item, dict) and isinstance(item.get('text'), str)
+        and item.get('speaker') in {'player', 'mestre'}
+    ] if isinstance(dialogue, list) else []
+    return {
+        **{key: stored[key] for key in ('campaign_id', 'session_id', 'ruleset', 'revision')},
+        'character': character,
+        'derived': derived,
+        'state': state,
+        'available_actions': available_actions,
+        'history': history,
+    }
+
+
+@app.post('/v1/game/turn', response_model=PersistedGameTurnResponse)
 def game_turn(
-    body: GameTurnRequest,
+    body: SessionTurnRequest,
     x_api_key: str | None = Header(default=None),
     x_request_id: str | None = Header(default=None),
+    x_session_token: str = Header(alias='X-Session-Token'),
+    idempotency_key: str = Header(alias='Idempotency-Key'),
 ):
     authorize(x_api_key)
     started = time.perf_counter()
     request_id = x_request_id if isinstance(x_request_id, str) else None
     logger.info(
-        "GAME_TURN_STARTED action=%s campaign_id=%s request_id=%s",
+        "GAME_TURN_STARTED action=%s session_id=%s request_id=%s",
         (body.action or {}).get('type', 'none'),
-        body.campaign_id,
+        body.session_id,
         request_id or 'none',
     )
+
+    def execute_turn(state: dict[str, Any], campaign_id: str):
+        _validate_snapshot_action(body.action, state)
+        internal_request = GameTurnRequest(
+            campaign_id=campaign_id,
+            state=state,
+            player_input=body.player_input,
+            action=body.action,
+            available_actions=[],
+        )
+        return build_game_orchestrator().turn(internal_request, request_id=request_id)
+
     try:
-        response = build_game_orchestrator().turn(body, request_id=request_id)
-        resolution = response.rule_resolution if hasattr(response, 'rule_resolution') else response['rule_resolution']
+        response = get_campaign_store().commit_turn(
+            session_id=body.session_id,
+            session_token=x_session_token,
+            expected_revision=body.expected_revision,
+            idempotency_key=idempotency_key,
+            request_payload={
+                'expected_revision': body.expected_revision,
+                'player_input': body.player_input,
+                'action': body.action,
+            },
+            execute_turn=execute_turn,
+        )
+        resolution = response['rule_resolution']
         logger.info(
-            "GAME_TURN_COMPLETED resolution_status=%s duration_ms=%.1f request_id=%s",
+            "GAME_TURN_COMPLETED resolution_status=%s revision=%s duration_ms=%.1f request_id=%s",
             resolution.get('status', 'unknown'),
+            response['revision'],
             (time.perf_counter() - started) * 1000,
             request_id or 'none',
         )
         return response
+    except (
+        CampaignNotFound,
+        IdempotencyConflict,
+        PersistenceNotConfigured,
+        PersistenceUnavailable,
+        RevisionConflict,
+        SessionUnauthorized,
+        SnapshotIntegrityError,
+    ) as exc:
+        raise_campaign_http_error(exc)
     except InvalidGameAction as exc:
         logger.warning(
             "GAME_TURN_INVALID_ACTION duration_ms=%.1f error_type=%s request_id=%s",

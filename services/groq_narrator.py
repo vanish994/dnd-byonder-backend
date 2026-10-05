@@ -57,7 +57,7 @@ class GroqNarratorClient:
         api_key: str,
         model: str,
         base_url: str = "https://api.groq.com/openai/v1",
-        timeout_seconds: float = 30.0,
+        timeout_seconds: float = 20.0,
         max_output_tokens: int = 512,
         temperature: float = 0.7,
         transport: httpx.BaseTransport | None = None,
