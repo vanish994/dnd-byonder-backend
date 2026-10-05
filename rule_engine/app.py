@@ -66,6 +66,7 @@ from rule_engine.character_creation_catalog import character_options_phb2024
 from rule_engine.character_creation_phb2024 import build_phb2024_character
 from rule_engine.source_policy import STRICT_EDITION_SCOPE, append_strict_source_policy
 from services.groq_narrator import GroqNarratorClient
+from services.groq_mj import GroqIntentInterpreter
 from services.narrator import UnavailableNarratorProvider
 
 
@@ -663,6 +664,16 @@ def resolve_game_action(action: dict[str, Any], state: dict[str, Any]) -> dict[s
         key: value for key, value in action.items()
         if key not in ACTION_PRESENTATION_FIELDS
     }
+    if mechanical_action.get('type') in {'skill_check', 'ability_check'} and 'dc' not in mechanical_action:
+        character = state.get('character')
+        character_id = character.get('id') if isinstance(character, dict) else None
+        if not isinstance(character_id, str) or not character_id:
+            raise ValueError('resolution requires a server-owned character')
+        mechanical_action = {
+            **mechanical_action,
+            'dc': 10,
+            'character_id': character_id,
+        }
     if mechanical_action.get('type') == 'attack':
         actor_id = mechanical_action.get('actor_id')
         target_id = mechanical_action.get('target_id')
@@ -815,10 +826,18 @@ def build_game_orchestrator() -> GameOrchestrator:
             max_output_tokens=max_output_tokens,
             temperature=temperature,
         )
+        interpreter = GroqIntentInterpreter(
+            api_key=GROQ_API_KEY,
+            model=GROQ_MODEL,
+            base_url=GROQ_BASE_URL,
+            timeout_seconds=timeout,
+            max_output_tokens=min(max_output_tokens, 256),
+        )
     except ValueError as exc:
         logger.warning("NARRATOR_CONFIGURATION_INVALID error_type=%s fallback=local", type(exc).__name__)
         narrator = UnavailableNarratorProvider()
-    return GameOrchestrator(narrator, resolve_action=resolve_game_action)
+        interpreter = None
+    return GameOrchestrator(narrator, resolve_action=resolve_game_action, interpret_intent=interpreter.interpret if interpreter else None)
 
 
 @app.get('/v1/sessions/{session_id}', response_model=SessionResumeResponse)
