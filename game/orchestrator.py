@@ -60,8 +60,19 @@ def _bind_adventure_intent(
     return deepcopy(matches[0])
 
 
-def acknowledge_intent(_player_input: str, _state: dict[str, Any]) -> str:
-    """Acknowledge free text without asserting an unresolved consequence."""
+def acknowledge_intent(_player_input: str, state: dict[str, Any]) -> str:
+    """Acknowledge intent without inventing mechanics, with a one-shot opening."""
+    scene = state.get("scene")
+    if isinstance(scene, dict) and scene.get("opening_seed"):
+        character = state.get("character")
+        character_name = character.get("name") if isinstance(character, dict) else None
+        greeting = f"{character_name}, " if isinstance(character_name, str) and character_name else ""
+        return (
+            f"{greeting}você chega à Redwood Watch com uma missão clara: investigar a corrupção "
+            "que se espalha pela floresta e os desaparecimentos que deixaram a região em alerta. "
+            "À frente, Kaynen observa a passagem para o bosque de sequoias e mede suas intenções. "
+            "O silêncio entre as árvores parece guardar a primeira pista — e a investigação começa agora."
+        )
     return "Sua intenção foi registrada. Nenhuma consequência mecânica foi resolvida neste momento."
 
 

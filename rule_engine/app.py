@@ -582,6 +582,7 @@ def _redwood_grove_scene(character_id: str) -> dict[str, Any]:
         'id': REDWOOD_GROVE_SCENE_ID,
         'type': 'exploration',
         'title': 'Redwood Grove',
+        'description': 'O bosque de sequoias se fecha ao redor da trilha. Kaynen aguarda, atento, enquanto a entrada da toca permanece à frente entre raízes e sombras.',
         'available_actions': [
             {
                 'type': 'adventure_action',
@@ -609,6 +610,8 @@ def _redwood_watch_scene(character_id: str) -> dict[str, Any]:
         'id': 'redwood-watch',
         'type': 'exploration',
         'title': 'Redwood Watch',
+        'description': 'Na borda da floresta, Redwood Watch é o último ponto seguro antes do bosque de sequoias. Kaynen guarda a passagem enquanto relatos de corrupção e desaparecimentos aguardam investigação.',
+        'opening_seed': uuid.uuid4().hex,
         'available_actions': [
             {
                 'type': 'skill_check',
