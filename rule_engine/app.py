@@ -362,8 +362,16 @@ class SkillCheckAction(BaseModel):
 
 class AdventureAction(BaseModel):
     type: Literal['adventure_action']
-    intent: Literal['collect_bark_sample']
-    tree_id: StrictStr = Field(min_length=1, max_length=32)
+    intent: Literal['show_respect_to_kaynen', 'collect_bark_sample']
+    tree_id: StrictStr | None = Field(default=None, min_length=1, max_length=32)
+
+    @model_validator(mode='after')
+    def validate_intent_fields(self):
+        if self.intent == 'collect_bark_sample' and self.tree_id is None:
+            raise ValueError('collect_bark_sample requires tree_id')
+        if self.intent == 'show_respect_to_kaynen' and self.tree_id is not None:
+            raise ValueError('show_respect_to_kaynen cannot include tree_id')
+        return self
 
     class Config:
         extra = 'forbid'
@@ -577,20 +585,10 @@ def _redwood_grove_scene(character_id: str) -> dict[str, Any]:
         'available_actions': [
             {
                 'type': 'adventure_action',
-                'intent': 'collect_bark_sample',
-                'tree_id': 'r3',
-                'label': 'Coletar amostra da árvore',
-                'description': 'Colete uma amostra da casca da árvore disponível.',
-                'player_input': 'Coleto uma amostra da casca desta árvore.',
-            },
-            {
-                'type': 'skill_check',
-                'skill': 'persuasion',
-                'dc': 12,
-                'character_id': character_id,
-                'label': 'Convencer Kaynen',
-                'description': 'Tente convencer Kaynen a permitir a coleta.',
-                'player_input': 'Tento convencer Kaynen a permitir a coleta.',
+                'intent': 'show_respect_to_kaynen',
+                'label': 'Respeitar o pedido de Kaynen',
+                'description': 'Mostre que você respeita o pedido de não tocar na árvore antes de pedir ajuda.',
+                'player_input': 'Respeito o pedido de Kaynen e não toco na árvore.',
             },
             {
                 'type': 'skill_check',
@@ -771,13 +769,52 @@ def resolve_adventure_action(body: ResolveRequest) -> dict[str, Any]:
         if isinstance(candidate, dict)
         and candidate.get('type') == 'adventure_action'
         and candidate.get('intent') == action.intent
-        and candidate.get('tree_id') == action.tree_id
+        and (action.intent == 'show_respect_to_kaynen' or candidate.get('tree_id') == action.tree_id)
     ]
     if len(authorized) != 1:
         raise ValueError('adventure action is not authorized by the current snapshot')
 
     adventure = body.state.setdefault('adventure', {})
+    if action.intent == 'show_respect_to_kaynen':
+        if adventure.get('kaynen_attitude') == 'indifferent':
+            raise ValueError('respect was already shown to Kaynen')
+        adventure['kaynen_attitude'] = 'indifferent'
+        scene['available_actions'] = [
+            {
+                'type': 'skill_check',
+                'skill': 'persuasion',
+                'dc': 12,
+                'character_id': body.state.get('character', {}).get('id'),
+                'label': 'Pedir a ajuda de Kaynen',
+                'description': 'Peça a Kaynen que ajude a investigar a corrupção da floresta.',
+                'player_input': 'Peço a ajuda de Kaynen para investigar a corrupção da floresta.',
+            },
+            {
+                'type': 'skill_check',
+                'skill': 'perception',
+                'dc': 14,
+                'character_id': body.state.get('character', {}).get('id'),
+                'label': 'Examinar a entrada da toca',
+                'description': 'Procure pegadas próximas à entrada da toca sem presumir o que elas revelam.',
+                'player_input': 'Procuro pegadas próximas à entrada da toca.',
+            },
+        ]
+        return {
+            'schema_version': RULE_RESOLUTION_SCHEMA_VERSION,
+            'status': 'resolved',
+            'action': {'type': action.type, 'intent': action.intent},
+            'check': {},
+            'rolls': [],
+            'outcome': {
+                'state_changed': True,
+                'kaynen_attitude': 'indifferent',
+                'narrative_facts': [{'id': 'kaynen-request-respected'}],
+            },
+            'rules_used': ['dragon-delves.redwood-grove.kaynen-respect.v1'],
+        }
     samples = adventure.setdefault('redwood_samples', [])
+    if adventure.get('kaynen_attitude') != 'friendly':
+        raise ValueError('Kaynen must be friendly before collecting a bark sample')
     if action.tree_id in samples:
         raise ValueError('redwood sample was already collected')
     samples.append(action.tree_id)
@@ -958,6 +995,36 @@ def resolve_game_action(action: dict[str, Any], state: dict[str, Any]) -> dict[s
             outcome['narrative_facts'] = [fact]
         else:
             outcome['narrative_facts'] = []
+    if (
+        mechanical_action.get('type') == 'skill_check'
+        and mechanical_action.get('skill') == 'persuasion'
+        and resolution.get('outcome', {}).get('success') is True
+        and isinstance(scene, dict)
+        and scene.get('id') == REDWOOD_GROVE_SCENE_ID
+    ):
+        adventure = state.setdefault('adventure', {})
+        adventure['kaynen_attitude'] = 'friendly'
+        scene['available_actions'] = [
+            {
+                'type': 'adventure_action',
+                'intent': 'collect_bark_sample',
+                'tree_id': 'r3',
+                'label': 'Coletar amostra da árvore',
+                'description': 'Kaynen permite que você colha uma amostra da casca da árvore.',
+                'player_input': 'Coleto uma amostra da casca desta árvore.',
+            },
+            *[
+                candidate for candidate in scene.get('available_actions', [])
+                if isinstance(candidate, dict)
+                and not (
+                    candidate.get('type') == 'skill_check'
+                    and candidate.get('skill') == 'persuasion'
+                )
+            ],
+        ]
+        resolution.setdefault('outcome', {})['narrative_facts'] = [
+            {'id': 'kaynen-became-friendly'},
+        ]
     return resolution
 
 
