@@ -9,4 +9,4 @@ COPY migrations ./migrations
 COPY scripts ./scripts
 COPY dnd2024_knowledge_base ./dnd2024_knowledge_base
 ENV PYTHONUNBUFFERED=1
-CMD ["sh", "-c", "uvicorn rule_engine.app:app --host 0.0.0.0 --port ${PORT:-10000}"]
+CMD ["sh", "scripts/start_rule_engine.sh"]
