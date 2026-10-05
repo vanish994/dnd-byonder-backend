@@ -44,11 +44,30 @@ class RedwoodGroveTests(unittest.TestCase):
             api.resolve_game_action(persuasion, state)
 
     def test_redwood_snapshot_contains_only_server_owned_actions(self):
+        self.assertIn('description', self.scene())
+        self.assertIn('entrada da toca', self.scene()['description'])
         actions = self.scene()["available_actions"]
         self.assertEqual([action["type"] for action in actions], ["adventure_action", "skill_check"])
         self.assertEqual(actions[0]["intent"], "show_respect_to_kaynen")
         self.assertEqual(actions[1]["dc"], 14)
         self.assertEqual(actions[1]["skill"], "perception")
+
+    def test_opening_turn_presents_context_before_asking_for_action(self):
+        narrator = Mock()
+        orchestrator = GameOrchestrator(narrator, resolve_action=api.resolve_game_action)
+        state = self.state()
+        state['scene'] = api._redwood_watch_scene('character-1')
+        state['character']['name'] = 'Elian'
+        response = orchestrator.turn(GameTurnRequest(
+            campaign_id='campaign-redwood',
+            state=state,
+            player_input='Começar a aventura.',
+        ))
+        self.assertIn('Elian', response.narration)
+        self.assertIn('Redwood Watch', response.narration)
+        self.assertIn('corrupção', response.narration)
+        self.assertIn('desaparecimentos', response.narration)
+        self.assertNotIn('opening_seed', response.state['scene'])
 
     def test_respecting_kaynen_unlocks_server_owned_influence_check(self):
         state = self.state()
