@@ -105,7 +105,14 @@ class GameOrchestrator:
                 gate_resolution = resolution_gate.get("resolution")
                 if not isinstance(gate_resolution, dict):
                     raise RuleResolutionError("Resolution Gate returned no resolution request")
-                action = _bind_gate_intent(gate_resolution, available_actions)
+                try:
+                    action = _bind_gate_intent(gate_resolution, available_actions)
+                except InvalidGameAction:
+                    # A model suggestion is not an authorization. If the current
+                    # snapshot has no matching action, acknowledge without rolling.
+                    # This keeps creative/trivial input safe and avoids inventing a
+                    # DC, modifier, roll, consequence, or state transition.
+                    action = None
             elif isinstance(resolution_gate.get("adventure_action"), dict):
                 action = _bind_adventure_intent(
                     resolution_gate["adventure_action"],
@@ -118,6 +125,8 @@ class GameOrchestrator:
                 "status": "needs_rule_validation",
                 "reason": "No mechanical resolution is required for this narrative intent.",
             }
+            if resolution_gate and resolution_gate.get("requires_resolution") is True:
+                resolution["reason"] = "The requested mechanical intent is not authorized by the current snapshot."
         else:
             try:
                 resolution = self.resolve_action(action, state)

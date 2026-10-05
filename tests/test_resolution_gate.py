@@ -2,7 +2,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock
 
-from game.orchestrator import GameOrchestrator, InvalidGameAction
+from game.orchestrator import GameOrchestrator
 from game.resolution_gate import ResolutionGateDecision
 from game.contracts import GameTurnRequest
 from services.gemini_mj import GeminiMJClient, GeminiMJError
@@ -111,7 +111,7 @@ class ResolutionGateTests(unittest.TestCase):
         resolve.assert_called_once_with(authorized, response.state)
         self.assertTrue(response.rule_resolution["resolution_gate"]["requires_resolution"])
 
-    def test_resolution_intent_not_in_snapshot_fails_closed(self):
+    def test_resolution_intent_not_in_snapshot_acknowledges_without_rolling(self):
         narrator = Mock()
         resolve = Mock()
         orchestrator = GameOrchestrator(
@@ -123,13 +123,14 @@ class ResolutionGateTests(unittest.TestCase):
                 "resolution": {"type": "skill_check", "skill": "stealth"},
             },
         )
-        with self.assertRaises(InvalidGameAction):
-            orchestrator.turn(GameTurnRequest(
-                state={"scene": {"type": "exploration", "available_actions": [
-                    {"type": "skill_check", "skill": "perception", "dc": 12},
-                ]}},
-                player_input="Passo sem fazer barulho.",
-            ))
+        response = orchestrator.turn(GameTurnRequest(
+            state={"scene": {"type": "exploration", "available_actions": [
+                {"type": "skill_check", "skill": "perception", "dc": 12},
+            ]}},
+            player_input="Passo sem fazer barulho.",
+        ))
+        self.assertEqual(response.rule_resolution["status"], "needs_rule_validation")
+        self.assertIn("not authorized", response.rule_resolution["reason"])
         resolve.assert_not_called()
         narrator.narrate.assert_not_called()
 
