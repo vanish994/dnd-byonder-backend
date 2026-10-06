@@ -2,6 +2,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock
 
+from game.campaign import CampaignSetup
 from services.gemini_mj import GeminiMJClient, GeminiMJError
 
 
@@ -78,6 +79,26 @@ class GeminiMJTests(unittest.TestCase):
             client.narrate(
                 campaign_id="campaign", state={}, player_input="x",
                 rule_resolution={"schema_version": "rule-resolution-v1", "status": "needs_rule_validation"},
+            )
+
+    def test_campaign_seed_is_structured_and_contains_no_mechanics(self):
+        response = SimpleNamespace(text='''{"schema_version":"campaign-seed-v1","title":"As Cinzas","premise":"Uma cidade pede ajuda.","opening_location":"Porto Velho","opening_description":"A chuva cai sobre os telhados.","initial_tension":"Uma carta desaparecida preocupa a guarda.","known_facts":["A carta existia."],"rumors":["Alguém viu uma luz."],"npcs":[{"name":"Iara","role":"guia","motivation":"proteger a cidade"}],"initial_objectives":["Encontrar a carta."],"opening_question":"O que você faz?"}''')
+        client, models = self.make_client(response=response)
+        seed = client.generate_campaign_seed(
+            setup=CampaignSetup(campaign_name='Teste', setting_prompt='Uma cidade portuária.'),
+            character={'name': 'Aria', 'class': {'id': 'wizard'}},
+        )
+        self.assertEqual(seed.schema_version, 'campaign-seed-v1')
+        self.assertEqual(seed.opening_location, 'Porto Velho')
+        self.assertEqual(models.generate_content.call_args.kwargs['config'].response_mime_type, 'application/json')
+
+    def test_campaign_seed_rejects_mechanical_text(self):
+        response = SimpleNamespace(text='''{"schema_version":"campaign-seed-v1","title":"Teste","premise":"A CD é 12.","opening_location":"Lugar","opening_description":"Uma porta.","initial_tension":"Perigo.","known_facts":[],"rumors":[],"npcs":[],"initial_objectives":[],"opening_question":"O que faz?"}''')
+        client, _ = self.make_client(response=response)
+        with self.assertRaises(GeminiMJError):
+            client.generate_campaign_seed(
+                setup=CampaignSetup(campaign_name='Teste', setting_prompt='Uma porta.'),
+                character={'name': 'Aria'},
             )
 
 

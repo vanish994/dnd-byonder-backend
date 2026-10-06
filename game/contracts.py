@@ -5,6 +5,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, StrictInt, StrictStr, field_validator
 
+from game.campaign import CampaignSetup
+
 
 class GuidedCharacterRequest(BaseModel):
     """Player choices only; identity, proficiencies, equipment and HP are server-owned."""
@@ -49,6 +51,7 @@ class PHB2024GuidedCharacterRequest(BaseModel):
     class_equipment_option: StrictStr
     background_equipment_option: StrictStr
     class_choices: dict[StrictStr, StrictStr] = Field(default_factory=dict)
+    campaign_setup: CampaignSetup | None = None
 
     @field_validator('name')
     @classmethod

@@ -114,6 +114,8 @@ class CampaignStore:
         campaign_id = uuid.uuid4()
         session_id = uuid.uuid4()
         state_digest = self._digest(state)
+        campaign_type = 'dynamic' if state.get('schema_version') == 'campaign-state-v1' or state.get('scene', {}).get('id') == 'generated-opening' else 'dragon-delves'
+        campaign_title = state.get('campaign', {}).get('title') if isinstance(state.get('campaign'), dict) else None
         response = {
             **copy.deepcopy(creation_response),
             'campaign_id': str(campaign_id),
@@ -145,8 +147,8 @@ class CampaignStore:
                     return copy.deepcopy(existing['response'])
 
                 connection.execute(
-                    'INSERT INTO campaigns (campaign_id, ruleset) VALUES (%s, %s)',
-                    (campaign_id, ruleset),
+                    'INSERT INTO campaigns (campaign_id, ruleset, campaign_type, campaign_title) VALUES (%s, %s, %s, %s)',
+                    (campaign_id, ruleset, campaign_type, campaign_title),
                 )
                 connection.execute(
                     '''INSERT INTO sessions (session_id, campaign_id, session_token_hash, current_revision)

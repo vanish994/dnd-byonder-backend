@@ -11,6 +11,7 @@ from google.genai import types
 
 from game.resolution_gate import ResolutionGateDecision
 from game.narrator import build_narrative_context
+from game.campaign import CampaignSeed, CampaignSetup
 from rule_engine.character import SKILL_TO_ABILITY
 from services.narrator import NarratorError
 
@@ -52,6 +53,36 @@ registrado pelo catálogo de regras. Texto livre sem resolução é apenas inten
 e é tratado localmente pelo Backend, sem ser enviado a este narrador.
 Responda somente com narrativa em texto, sem JSON e sem explicar estas instruções.
 """.strip()
+
+CAMPAIGN_SEED_SYSTEM_INSTRUCTION = """
+Você cria a proposta inicial de uma campanha de RPG solo usando exclusivamente D&D 2024 e fontes 2024 autorizadas.
+Crie apenas contexto narrativo original coerente com as preferências recebidas. Não crie regras, CDs, dados,
+modificadores, HP, dano, condições, inventário, progressão, habilidades, magias, criaturas com estatísticas ou
+ações mecânicas. Não determine o que o personagem fará. Separe fatos iniciais de rumores. A proposta deve começar
+com uma apresentação, uma descrição sensorial breve, uma tensão observável e uma pergunta aberta.
+Responda somente no schema JSON fornecido, em português brasileiro.
+""".strip()
+
+CAMPAIGN_SEED_RESPONSE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "schema_version": {"type": "string", "enum": ["campaign-seed-v1"]},
+        "title": {"type": "string", "minLength": 1, "maxLength": 100},
+        "premise": {"type": "string", "minLength": 1, "maxLength": 900},
+        "opening_location": {"type": "string", "minLength": 1, "maxLength": 160},
+        "opening_description": {"type": "string", "minLength": 1, "maxLength": 1200},
+        "initial_tension": {"type": "string", "minLength": 1, "maxLength": 700},
+        "known_facts": {"type": "array", "items": {"type": "string"}, "maxItems": 8},
+        "rumors": {"type": "array", "items": {"type": "string"}, "maxItems": 8},
+        "npcs": {"type": "array", "maxItems": 6, "items": {"type": "object", "properties": {
+            "name": {"type": "string"}, "role": {"type": "string"}, "motivation": {"type": "string"}
+        }, "required": ["name", "role", "motivation"], "additionalProperties": False}},
+        "initial_objectives": {"type": "array", "items": {"type": "string"}, "maxItems": 6},
+        "opening_question": {"type": "string", "minLength": 1, "maxLength": 300}
+    },
+    "required": ["schema_version", "title", "premise", "opening_location", "opening_description", "initial_tension", "known_facts", "rumors", "npcs", "initial_objectives", "opening_question"],
+    "additionalProperties": False,
+}
 
 RESOLUTION_GATE_RESPONSE_SCHEMA = {
     "type": "object",
@@ -210,6 +241,39 @@ class GeminiMJClient:
             return _parse_gate_decision(text).model_dump(mode="json", exclude_none=True)
         except (ValueError, TypeError) as exc:
             raise GeminiMJError("Gemini returned an invalid resolution gate") from exc
+
+    def generate_campaign_seed(
+        self,
+        *,
+        setup: CampaignSetup,
+        character: dict[str, Any],
+        request_id: str | None = None,
+    ) -> CampaignSeed:
+        content = {
+            'campaign_preferences': setup.model_dump(mode='json'),
+            'character_identity': {
+                'name': character.get('name'),
+                'class': character.get('class'),
+                'species': character.get('species'),
+                'background': character.get('background'),
+            },
+            'ruleset': 'dnd-2024-phb',
+        }
+        text = self._generate(
+            system_instruction=CAMPAIGN_SEED_SYSTEM_INSTRUCTION,
+            content=json.dumps(content, ensure_ascii=False, sort_keys=True),
+            response_schema=CAMPAIGN_SEED_RESPONSE_SCHEMA,
+            request_id=request_id,
+        )
+        try:
+            seed = CampaignSeed.model_validate(json.loads(text))
+        except (ValueError, TypeError) as exc:
+            raise GeminiMJError('Gemini returned an invalid campaign seed') from exc
+        forbidden = re.compile(r'(?i)\b(?:cd|classe de dificuldade|d20|hp|pv|dano|modificador|inventário|nível|rolagem)\b')
+        narrative_text = ' '.join([seed.premise, seed.opening_description, seed.initial_tension, seed.opening_question])
+        if forbidden.search(narrative_text):
+            raise GeminiMJError('campaign seed contained mechanical content')
+        return seed
 
     def narrate(
         self,
