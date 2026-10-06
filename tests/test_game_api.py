@@ -37,21 +37,21 @@ class GameApiTests(unittest.TestCase):
     def setUp(self):
         self.previous = {
             'api_key': api.API_KEY,
-            'groq_key': api.GROQ_API_KEY,
-            'groq_model': api.GROQ_MODEL,
-            'groq_base_url': api.GROQ_BASE_URL,
+            'gemini_key': api.GEMINI_API_KEY,
+            'gemini_model': api.GEMINI_MODEL,
+            'gemini_base_url': api.GEMINI_BASE_URL,
         }
         api.API_KEY = 'backend-secret'
-        api.GROQ_API_KEY = ''
-        api.GROQ_MODEL = ''
-        api.GROQ_BASE_URL = ''
+        api.GEMINI_API_KEY = ''
+        api.GEMINI_MODEL = ''
+        api.GEMINI_BASE_URL = ''
         self.addCleanup(self.restore)
 
     def restore(self):
         api.API_KEY = self.previous['api_key']
-        api.GROQ_API_KEY = self.previous['groq_key']
-        api.GROQ_MODEL = self.previous['groq_model']
-        api.GROQ_BASE_URL = self.previous['groq_base_url']
+        api.GEMINI_API_KEY = self.previous['gemini_key']
+        api.GEMINI_MODEL = self.previous['gemini_model']
+        api.GEMINI_BASE_URL = self.previous['gemini_base_url']
 
     def turn_request(self, **overrides):
         payload = {
@@ -90,7 +90,7 @@ class GameApiTests(unittest.TestCase):
         self.assertEqual(result['session_id'], store.last_call['session_id'].__str__())
         self.assertNotIn('state', store.last_call['request_payload'])
         self.assertEqual(result['rule_resolution']['schema_version'], 'rule-resolution-v1')
-        self.assertEqual(result['narration_status'], 'unavailable')
+        self.assertEqual(result['narration_status'], 'available')
 
     def test_client_cannot_construct_turn_with_state_campaign_or_available_actions(self):
         for extra in (

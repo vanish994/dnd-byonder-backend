@@ -138,7 +138,9 @@ class CharacterCreationTests(unittest.TestCase):
         self.assertEqual(first_turn.available_actions, created["available_actions"])
         self.assertEqual(first_turn.rule_resolution["schema_version"], "rule-resolution-v1")
         self.assertEqual(first_turn.rule_resolution["status"], "needs_rule_validation")
-        self.assertEqual(first_turn.narration, "A aventura começa.")
+        self.assertIn("Redwood Watch", first_turn.narration)
+        self.assertIn("corrupção", first_turn.narration)
+        self.assertNotIn("Nenhuma consequência mecânica", first_turn.narration)
         intent_turn = session.turn(GameTurnRequest(
             campaign_id=created["campaign_id"], state=first_turn.state,
             player_input=investigate_action["player_input"], action=investigate_action,

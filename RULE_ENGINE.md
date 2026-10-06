@@ -28,7 +28,7 @@ A chave opcional é enviada em `X-API-Key`. No Render, configure `RULE_ENGINE_AP
 
 O campo `action` é opcional. Texto livre não é interpretado como regra. Quando uma ação estruturada é fornecida, ela é validada pelo mesmo `ResolveRequest` do Rule Engine e, se suportada, produz `rule-resolution-v1` no campo `rule_resolution`.
 
-A integração com o provider de narração é separada do Rule Engine. O provider Groq recebe apenas contexto narrativo e fatos resolvidos; não rola, calcula ou adjudica mecânicas. O provider Groq permanece disponível para rollback explícito.
+A integração com o provider de narração é separada do Rule Engine. O provider Gemini recebe apenas contexto narrativo e fatos resolvidos; não rola, calcula ou adjudica mecânicas. O provider Gemini permanece disponível para rollback explícito.
 
 O Rule Engine também aceita ações estruturadas de `rest`, `define_resource`, `consume_resource`, `recover_resource`, `add_item`, `remove_item`, `equip_item` e `unequip_item`. Esses dados vivem no estado serializável do personagem (`resources`, `inventory` e `equipped`) e continuam sob a autoridade mecânica do resolver. Descanso não é permitido durante combate ativo; ataques de combate podem usar a arma equipada e a AC pode ser derivada da armadura equipada.
 
@@ -49,11 +49,11 @@ Ataques múltiplos são transacionais: uma falha em qualquer ataque restaura o e
 ### Configuração
 
 ```text
-GROQ_API_KEY=<secret do Google Groq>
-GROQ_MODEL=llama-3.3-70b-versatile
-GROQ_TIMEOUT_SECONDS=20
-GROQ_MAX_OUTPUT_TOKENS=512
-GROQ_TEMPERATURE=0.7
+GEMINI_API_KEY=<secret do Google AI Studio>
+GEMINI_MODEL=gemini-3.5-flash-lite
+GEMINI_TIMEOUT_SECONDS=20
+GEMINI_MAX_OUTPUT_TOKENS=512
+GEMINI_TEMPERATURE=0.7
 ```
 
 

@@ -7,7 +7,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field, StrictInt, StrictStr, model_validator
 
 from game.contracts import GuidedCharacterRequest, PHB2024GuidedCharacterRequest
-from rule_engine.classes import class_definition, class_features, class_resource_maximum, class_resource_recovery, class_resource_recovery_amount
+from rule_engine.classes import class_definition, class_features, class_resource_maximum, class_resource_recovery, class_resource_recovery_amount, class_subclass_options
 from rule_engine.character_creation_catalog import (
     ABILITY_IDS,
     BACKGROUND_RECORDS,
@@ -210,6 +210,7 @@ class Character(BaseModel):
     experience_points: StrictInt = Field(default=0, ge=0)
     abilities: dict[str, StrictInt]
     class_: ClassFoundation = Field(alias="class")
+    subclass_id: StrictStr | None = Field(default=None, min_length=1, max_length=128)
     proficiencies: Proficiencies = Field(default_factory=Proficiencies)
     weapons: dict[str, WeaponFoundation] = Field(default_factory=dict)
     inventory: dict[str, Any] = Field(default_factory=dict)
@@ -231,6 +232,10 @@ class Character(BaseModel):
     starting_equipment: dict[str, Any] = Field(default_factory=dict)
     origin_feat: dict[str, Any] = Field(default_factory=dict)
     current_hp: StrictInt | None = Field(default=None, ge=0)
+    spellcasting: dict[str, Any] = Field(default_factory=dict)
+    # Additive server-owned projection; mechanics continue to use typed fields
+    # above and never trust values supplied by a client in this field.
+    universal_character: dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode="before")
     @classmethod
@@ -238,6 +243,8 @@ class Character(BaseModel):
         if not isinstance(value, dict):
             return value
         data = dict(value)
+        # Derived values are a transport projection, never Character input.
+        data.pop("derived", None)
         if "class_" in data and "class" not in data:
             data["class"] = data.pop("class_")
         generation = data.pop("ability_generation", None)
@@ -270,6 +277,7 @@ class Character(BaseModel):
         data.setdefault("class_choices", {})
         data.setdefault("starting_equipment", {})
         data.setdefault("origin_feat", {})
+        data.setdefault("spellcasting", {})
         return data
 
     @model_validator(mode="after")
@@ -286,6 +294,8 @@ class Character(BaseModel):
         class_definition(self.class_.id)
         validate_experience_points(self.experience_points)
         class_data = class_definition(self.class_.id)
+        if self.subclass_id is not None and self.subclass_id not in class_subclass_options(self.class_.id):
+            raise ValueError("subclass must be an option of the selected PHB 2024 class")
         if self.level > class_data.get("max_supported_level", MAX_LEVEL):
             raise ValueError("class progression is not implemented at this level")
         selected_skills = {skill for skill, proficient in self.proficiencies.skills.items() if proficient}
@@ -300,8 +310,6 @@ class Character(BaseModel):
         else:
             if self.species_id not in SPECIES_RECORDS or self.background_id not in BACKGROUND_RECORDS:
                 raise ValueError("species and background must come from the PHB 2024 catalog")
-            if self.level != 1:
-                raise ValueError("PHB 2024 guided creation currently supports level 1 only")
             if self.alignment_id not in {
                 "lawful_good", "neutral_good", "chaotic_good", "lawful_neutral", "neutral",
                 "chaotic_neutral", "lawful_evil", "neutral_evil", "chaotic_evil",
@@ -468,10 +476,12 @@ def character_to_state(character: Character) -> dict[str, Any]:
         "level": character.level,
         "experience_points": character.experience_points,
         "class": character.class_.model_dump(),
+        "subclass_id": character.subclass_id,
         "abilities": dict(character.abilities),
         "proficiencies": character.proficiencies.model_dump(),
         "weapons": {key: value.model_dump() for key, value in character.weapons.items()},
         "current_hp": character.current_hp,
+        "derived": character.derived(),
         "class_features": list(character.class_features),
     }
     if character.inventory:
@@ -508,6 +518,14 @@ def character_to_state(character: Character) -> dict[str, Any]:
         state["class_choices"] = dict(character.class_choices)
     if character.starting_equipment:
         state["starting_equipment"] = character.starting_equipment
+    if character.spellcasting:
+        state["spellcasting"] = character.spellcasting
+    # Additive migration: preserve the established snapshot while exposing a
+    # canonical UniversalCharacter projection for new consumers. This is
+    # derived server-side; clients never provide or control this field.
+    from rule_engine.universal_character import UniversalCharacter
+
+    state["universal_character"] = UniversalCharacter.from_legacy_state(state).to_snapshot()
     return state
 
 

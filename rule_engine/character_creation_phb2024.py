@@ -18,6 +18,8 @@ from rule_engine.character_creation_catalog import (
     validate_equipment_package_choice,
     validate_species_choices,
 )
+from rule_engine.canonical_catalog import CANONICAL_CATALOG
+from rule_engine.classes import class_definition, class_resource_ids, class_resource_maximum, class_resource_recovery, class_spellcasting
 from rule_engine.progression import experience_for_level
 
 
@@ -25,6 +27,15 @@ def build_phb2024_character(selection: PHB2024GuidedCharacterRequest) -> Charact
     """Build a level-1 character from strictly validated PHB 2024 choices."""
     if selection.level != 1:
         raise ValueError("PHB 2024 character creation currently supports level 1 only")
+    # The existing creation catalog supplies runtime-shaped records. Every
+    # selectable ID must first pass the provenance-hashed canonical catalog so
+    # legacy or unreviewed options cannot reach the Rule Engine.
+    try:
+        CANONICAL_CATALOG.get("class", selection.class_id)
+        CANONICAL_CATALOG.get("species", selection.species_id)
+        CANONICAL_CATALOG.get("background", selection.background_id)
+    except ValueError as exc:
+        raise ValueError("selection is not a canonical PHB 2024 option") from exc
     if selection.class_id not in CLASS_RECORDS:
         raise ValueError("unsupported PHB 2024 class")
     if selection.species_id not in SPECIES_RECORDS:
@@ -35,8 +46,8 @@ def build_phb2024_character(selection: PHB2024GuidedCharacterRequest) -> Charact
         raise ValueError("class-specific selections are not part of this creation payload yet")
 
     class_data = CLASS_RUNTIME_DEFINITIONS[selection.class_id]
-    class_definition = class_data
-    skill_choice_rules = class_definition["skill_proficiencies"]
+    class_record = class_data
+    skill_choice_rules = class_record["skill_proficiencies"]
     if len(selection.skills) != skill_choice_rules["count"]:
         raise ValueError("incorrect number of class skill choices")
     if len(set(selection.skills)) != len(selection.skills):
@@ -100,14 +111,22 @@ def build_phb2024_character(selection: PHB2024GuidedCharacterRequest) -> Charact
         "label_pt_br": background["origin_feat_label_pt_br"],
     }
     resources: dict[str, Any] = {}
-    if selection.class_id == "fighter":
-        resources["second_wind"] = {
-            "id": "second_wind",
-            "current": class_resource_maximum("fighter", "second_wind", 1),
-            "maximum": class_resource_maximum("fighter", "second_wind", 1),
-            "recovery": class_resource_recovery("fighter", "second_wind"),
-            "recovery_amount": class_resource_recovery_amount("fighter", "second_wind"),
+    ability_modifiers = {ability: (score - 10) // 2 for ability, score in selection.abilities.items()}
+    for resource_id in class_resource_ids(selection.class_id, 1):
+        resource_maximum = class_resource_maximum(
+            selection.class_id,
+            resource_id,
+            1,
+            ability_modifier=ability_modifiers.get("charisma"),
+        )
+        resource = {
+            "id": resource_id,
+            "current": resource_maximum,
+            "maximum": resource_maximum,
+            "recovery": class_resource_recovery(selection.class_id, resource_id),
         }
+        resources[resource_id] = resource
+    spellcasting = class_spellcasting(selection.class_id, 1)
 
     character_data = {
         "id": f"character-{uuid.uuid4().hex}",
@@ -125,6 +144,13 @@ def build_phb2024_character(selection: PHB2024GuidedCharacterRequest) -> Charact
         "equipped": {"weapon": None, "armor": None},
         "class_features": class_features(selection.class_id, 1),
         "resources": resources,
+        "spellcasting": {
+            "ability": class_definition(selection.class_id).get("spellcasting_ability"),
+            "cantrips_known": [],
+            "spells_known": [],
+            "spells_prepared": [],
+            "spell_slots": {str(level): count for level, count in spellcasting["slots"].items()},
+        } if spellcasting is not None else {},
         "species_id": selection.species_id,
         "species_choices": species_choices,
         "background_id": selection.background_id,

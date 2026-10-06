@@ -1,3 +1,5 @@
+> **Nota histórica (C2.2+):** este documento descreve a implementação legada baseada em Groq. A implementação ativa usa o SDK oficial Google Gen AI/Gemini; não use este documento para reintroduzir Groq, Llama ou autoridade mecânica no narrador.
+
 # Marco 5 — Mapa de impacto por arquivo
 
 **Base de implementação:** `origin/feat/ability-check-rule-resolution-v1` (PR #3)

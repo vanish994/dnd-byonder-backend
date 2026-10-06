@@ -112,6 +112,18 @@ class PHB2024CharacterCreationTests(unittest.TestCase):
                 self.assertEqual(resolution["rolls"][0]["result"], 15)
                 roll_dice.assert_called_once()
 
+    def test_wizard_level_up_to_six_syncs_features_resources_and_spell_slots(self):
+        character = build_phb2024_character(self.request(class_id="wizard"))
+        state = {"character": character_to_state(character)}
+        for xp in (300, 900, 2700, 6500, 14000):
+            state["character"]["experience_points"] = xp
+            resolution = resolve_game_action({"type": "level_up"}, state)
+            self.assertEqual(resolution["status"], "resolved")
+        self.assertEqual(state["character"]["level"], 6)
+        self.assertIn("memorize_spell", state["character"]["class_features"])
+        self.assertIn("wizard_subclass_feature", state["character"]["class_features"])
+        self.assertEqual(state["character"]["spellcasting"]["spell_slots"], {"1": 4, "2": 3, "3": 3})
+
     def test_point_buy_accepts_2024_costs_and_rejects_over_budget(self):
         base = {
             "strength": 15, "dexterity": 15, "constitution": 15,

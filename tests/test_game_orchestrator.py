@@ -34,7 +34,8 @@ class GameOrchestratorTests(unittest.TestCase):
 
         self.resolve_action.assert_not_called()
         self.assertEqual(response.rule_resolution["status"], "needs_rule_validation")
-        self.narrator.narrate.assert_called_once()
+        self.narrator.narrate.assert_not_called()
+        self.assertIn("Nenhuma consequência mecânica", response.narration)
         self.assertEqual(response.state["hp"], 12)
         self.assertIn("narrative_context", response.state)
 
@@ -56,7 +57,7 @@ class GameOrchestratorTests(unittest.TestCase):
 
         self.assertEqual(response.available_actions, actions)
         self.assertEqual(response.state["scene"]["available_actions"], actions)
-        self.assertEqual(self.narrator.narrate.call_args.kwargs["available_actions"], actions)
+        self.narrator.narrate.assert_not_called()
 
     def test_narrator_failure_on_free_text_keeps_needs_validation_status(self):
         self.narrator.narrate.side_effect = NarratorError("HTTP 503")
@@ -65,8 +66,9 @@ class GameOrchestratorTests(unittest.TestCase):
         response = self.orchestrator.turn(request)
 
         self.assertEqual(response.rule_resolution["status"], "needs_rule_validation")
-        self.assertEqual(response.narration_status, "unavailable")
-        self.assertEqual(response.narration, "A cena aguarda uma resolução mecânica antes de avançar.")
+        self.assertEqual(response.narration_status, "available")
+        self.assertIn("Nenhuma consequência mecânica", response.narration)
+        self.narrator.narrate.assert_not_called()
         self.assertEqual(response.state["narrative_context"]["recent_dialogue"][-1]["speaker"], "mestre")
 
     def test_valid_structured_action_is_forwarded_unchanged(self):
@@ -204,7 +206,7 @@ class GameOrchestratorTests(unittest.TestCase):
         self.assertEqual(context["schema_version"], "narrative-context-v1")
         self.assertEqual(len(context["recent_events"]), 2)
         self.assertEqual(context["recent_dialogue"][0]["text"], "Eu observo as árvores.")
-        self.assertEqual(context["recent_dialogue"][-1]["text"], "A cena continua.")
+        self.assertIn("Nenhuma consequência mecânica", context["recent_dialogue"][-1]["text"])
         self.assertNotIn("hp", context["recent_events"][0])
         self.assertEqual(second.rule_resolution["status"], "needs_rule_validation")
 

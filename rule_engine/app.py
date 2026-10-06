@@ -25,6 +25,8 @@ from game.contracts import (
     SessionResumeResponse,
     SessionTurnRequest,
 )
+from game.campaign import build_dynamic_state
+from game.adventure_catalog import REDWOOD_ADVENTURE_ID, get_adventure, list_adventures
 from game.orchestrator import (
     GameOrchestrator,
     InvalidGameAction,
@@ -41,7 +43,17 @@ from game.persistence import (
     SessionUnauthorized,
     SnapshotIntegrityError,
 )
-from rule_engine.classes import class_attack_count, class_features, class_resource_maximum, class_resource_recovery, class_resource_recovery_amount
+from rule_engine.classes import (
+    class_attack_count,
+    class_definition,
+    class_features,
+    class_resource_ids,
+    class_resource_maximum,
+    class_resource_recovery,
+    class_resource_recovery_amount,
+    class_spellcasting,
+    class_subclass_options,
+)
 from rule_engine.conditions import (
     advance_condition_durations,
     clear_conditions_for_rest,
@@ -54,6 +66,13 @@ from rule_engine.dice import MAX_MODIFIER, DiceExpressionError, roll_dice
 from rule_engine.equipment import add_item, equip_item, remove_item, unequip_item
 from rule_engine.progression import level_up_available, next_level_experience
 from rule_engine.resources import consume_resource, define_resource, recover_for_rest, recover_for_turn, recover_resource
+from rule_engine.subclass_mechanics import resolve_subclass_feature, subclass_prepared_spells
+from rule_engine.combat_magic import (
+    consume_reaction_window,
+    open_reaction_window,
+    resolve_complex_saving_throw,
+    resolve_concentration_check,
+)
 from rule_engine.character import (
     SKILL_TO_ABILITY,
     Character,
@@ -64,8 +83,9 @@ from rule_engine.character import (
 )
 from rule_engine.character_creation_catalog import character_options_phb2024
 from rule_engine.character_creation_phb2024 import build_phb2024_character
+from rule_engine.canonical_catalog import CANONICAL_CATALOG
 from rule_engine.source_policy import STRICT_EDITION_SCOPE, append_strict_source_policy
-from services.groq_narrator import GroqNarratorClient
+from services.gemini_mj import GeminiMJClient, GeminiMJError
 from services.narrator import UnavailableNarratorProvider
 
 
@@ -78,9 +98,9 @@ DB_PATH = Path(
     )
 )
 API_KEY = os.getenv('RULE_ENGINE_API_KEY', '').strip()
-GROQ_API_KEY = os.getenv('GROQ_API_KEY', '').strip()
-GROQ_MODEL = os.getenv('GROQ_MODEL', '').strip()
-GROQ_BASE_URL = os.getenv('GROQ_BASE_URL', 'https://api.groq.com/openai/v1').strip()
+GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '').strip()
+GEMINI_MODEL = os.getenv('GEMINI_MODEL', 'gemini-3.5-flash-lite').strip()
+GEMINI_BASE_URL = os.getenv('GEMINI_BASE_URL', 'https://generativelanguage.googleapis.com/v1beta').strip()
 app = FastAPI(title='D&D 2024 Rule Knowledge API', version='0.1.0')
 
 ABILITY_CHECK_RULE_ID = 'ability_check.mvp.v1'
@@ -100,6 +120,7 @@ CHARACTER_RULE_ID = 'character.v1'
 RULE_RESOLUTION_SCHEMA_VERSION = 'rule-resolution-v1'
 INITIAL_SCENE_ID = 'intro'
 INITIAL_ENCOUNTER_ID = 'intro-ambush'
+REDWOOD_GROVE_SCENE_ID = 'redwood-grove-r3'
 ACTION_PRESENTATION_FIELDS = {'label', 'description', 'player_input'}
 TextAction = constr(strict=True, min_length=1, max_length=200)
 
@@ -144,6 +165,23 @@ class SavingThrowAction(BaseModel):
         if self.modifier is not None and self.character_id is not None:
             raise ValueError('character-based saving throw cannot receive modifier')
         return self
+
+    class Config:
+        extra = 'forbid'
+
+
+class ComplexSavingThrowAction(BaseModel):
+    type: Literal['complex_saving_throw']
+    ability: Literal['strength', 'dexterity', 'constitution', 'intelligence', 'wisdom', 'charisma']
+    dc: StrictInt = Field(ge=1)
+    modifier: StrictInt = Field(ge=-MAX_MODIFIER, le=MAX_MODIFIER)
+    damage_dice: StrictStr | None = Field(default=None, min_length=2, max_length=20)
+    damage_modifier: StrictInt = Field(default=0, ge=-MAX_MODIFIER, le=MAX_MODIFIER)
+    half_on_success: bool = True
+    condition_on_failure: StrictStr | None = Field(default=None, min_length=1, max_length=32)
+    condition_duration: dict[str, Any] | None = None
+    advantage: bool = False
+    disadvantage: bool = False
 
     class Config:
         extra = 'forbid'
@@ -291,6 +329,44 @@ class LevelUpAction(BaseModel):
         extra = 'forbid'
 
 
+class SubclassFeatureAction(BaseModel):
+    type: Literal['use_subclass_feature']
+    feature_id: StrictStr = Field(min_length=1, max_length=64)
+    actor_id: StrictStr = Field(min_length=1, max_length=64)
+    target_id: StrictStr | None = Field(default=None, min_length=1, max_length=64)
+    mode: StrictStr | None = Field(default=None, min_length=1, max_length=32)
+
+    class Config:
+        extra = 'forbid'
+
+
+class SelectSubclassAction(BaseModel):
+    type: Literal['select_subclass']
+    character_id: StrictStr | None = None
+    subclass_id: StrictStr = Field(min_length=1, max_length=128)
+
+    class Config:
+        extra = 'forbid'
+
+
+class ConcentrationCheckAction(BaseModel):
+    type: Literal['concentration_check']
+    character_id: StrictStr | None = None
+    damage: StrictInt = Field(ge=0)
+
+    class Config:
+        extra = 'forbid'
+
+
+class ResolveReactionAction(BaseModel):
+    type: Literal['resolve_reaction']
+    actor_id: StrictStr = Field(min_length=1, max_length=64)
+    window_id: StrictStr = Field(min_length=1, max_length=64)
+
+    class Config:
+        extra = 'forbid'
+
+
 class SecondWindAction(BaseModel):
     type: Literal['second_wind']
     actor_id: StrictStr = Field(min_length=1, max_length=64)
@@ -358,8 +434,25 @@ class SkillCheckAction(BaseModel):
         extra = 'forbid'
 
 
+class AdventureAction(BaseModel):
+    type: Literal['adventure_action']
+    intent: Literal['show_respect_to_kaynen', 'collect_bark_sample']
+    tree_id: StrictStr | None = Field(default=None, min_length=1, max_length=32)
+
+    @model_validator(mode='after')
+    def validate_intent_fields(self):
+        if self.intent == 'collect_bark_sample' and self.tree_id is None:
+            raise ValueError('collect_bark_sample requires tree_id')
+        if self.intent == 'show_respect_to_kaynen' and self.tree_id is not None:
+            raise ValueError('show_respect_to_kaynen cannot include tree_id')
+        return self
+
+    class Config:
+        extra = 'forbid'
+
+
 class ResolveRequest(BaseModel):
-    action: TextAction | CreateCharacterAction | SkillCheckAction | AbilityCheckAction | SavingThrowAction | AttackAction | StartCombatAction | MoveAction | EndTurnAction | RestAction | ResourceAction | ExperienceAction | LevelUpAction | SecondWindAction | ActionSurgeAction | InventoryAction
+    action: TextAction | CreateCharacterAction | SkillCheckAction | AdventureAction | AbilityCheckAction | SavingThrowAction | ComplexSavingThrowAction | AttackAction | StartCombatAction | MoveAction | EndTurnAction | RestAction | ResourceAction | ExperienceAction | LevelUpAction | SubclassFeatureAction | SelectSubclassAction | ConcentrationCheckAction | ResolveReactionAction | SecondWindAction | ActionSurgeAction | InventoryAction
     state: dict[str, Any] = Field(default_factory=dict)
     rule_ids: list[str] = Field(default_factory=list)
 
@@ -557,6 +650,71 @@ def _initial_scene(character_id: str) -> dict[str, Any]:
     }
 
 
+def _redwood_grove_scene(character_id: str) -> dict[str, Any]:
+    """Return the first server-owned Redwood Grove snapshot."""
+    return {
+        'id': REDWOOD_GROVE_SCENE_ID,
+        'type': 'exploration',
+        'title': 'Redwood Grove',
+        'description': 'O bosque de sequoias se fecha ao redor da trilha. Kaynen aguarda, atento, enquanto a entrada da toca permanece à frente entre raízes e sombras.',
+        'available_actions': [
+            {
+                'type': 'adventure_action',
+                'intent': 'show_respect_to_kaynen',
+                'label': 'Respeitar o pedido de Kaynen',
+                'description': 'Mostre que você respeita o pedido de não tocar na árvore antes de pedir ajuda.',
+                'player_input': 'Respeito o pedido de Kaynen e não toco na árvore.',
+            },
+            {
+                'type': 'skill_check',
+                'skill': 'perception',
+                'dc': 14,
+                'character_id': character_id,
+                'label': 'Examinar a entrada da toca',
+                'description': 'Procure pegadas próximas à entrada da toca sem presumir o que elas revelam.',
+                'player_input': 'Procuro pegadas próximas à entrada da toca.',
+            },
+        ],
+    }
+
+
+def _redwood_watch_scene(character_id: str) -> dict[str, Any]:
+    """Return the compact, server-owned entry snapshot for the adventure."""
+    return {
+        'id': 'redwood-watch',
+        'type': 'exploration',
+        'title': 'Redwood Watch',
+        'description': 'Na borda da floresta, Redwood Watch é o último ponto seguro antes do bosque de sequoias. Kaynen guarda a passagem enquanto relatos de corrupção e desaparecimentos aguardam investigação.',
+        'opening_seed': uuid.uuid4().hex,
+        'available_actions': [
+            {
+                'type': 'skill_check',
+                'skill': 'persuasion',
+                'dc': 12,
+                'character_id': character_id,
+                'label': 'Convencer Kaynen',
+                'description': 'Tente convencer Kaynen a permitir a investigação.',
+                'player_input': 'Tento convencer Kaynen a permitir a investigação.',
+            },
+        ],
+    }
+
+
+def _adventure_state(adventure: dict[str, Any], scene: dict[str, Any]) -> dict[str, Any]:
+    return {
+        'id': adventure['id'],
+        'title': adventure['title'],
+        'source': adventure['source'],
+        'objective': 'Investigar a corrupção e os desaparecimentos.',
+        'scene_id': scene['id'],
+        'known_facts': ['A investigação começa na Redwood Watch.'],
+        'discoveries': [],
+        'npcs': ['kaynen'],
+        'threats': [],
+        'mechanical_context': {'ruleset': 'dnd-2024-phb'},
+    }
+
+
 def _guided_character_preview(body: GuidedCharacterRequest) -> tuple[dict[str, Any], dict[str, Any]]:
     try:
         character = build_guided_character(body)
@@ -602,6 +760,12 @@ def get_phb2024_character_options(x_api_key: str | None = Header(default=None)):
     return character_options_phb2024()
 
 
+@app.get('/v2/adventures')
+def get_adventure_catalog(x_api_key: str | None = Header(default=None)):
+    authorize(x_api_key)
+    return list_adventures()
+
+
 def _phb2024_character_preview(body: PHB2024GuidedCharacterRequest) -> tuple[dict[str, Any], dict[str, Any]]:
     try:
         character = build_phb2024_character(body)
@@ -619,9 +783,38 @@ def _phb2024_character_preview(body: PHB2024GuidedCharacterRequest) -> tuple[dic
     }, resolution_body.state
 
 
+def _dynamic_campaign_state(body: PHB2024GuidedCharacterRequest, character: dict[str, Any]) -> dict[str, Any]:
+    setup = body.campaign_setup
+    if setup is None:
+        raise ValueError('campaign setup is required')
+    if not GEMINI_API_KEY or not GEMINI_MODEL or not GEMINI_BASE_URL:
+        raise HTTPException(status_code=503, detail='dynamic campaign narrator is unavailable')
+    try:
+        client = GeminiMJClient(
+            api_key=GEMINI_API_KEY,
+            model=GEMINI_MODEL,
+            base_url=GEMINI_BASE_URL,
+            timeout_seconds=float(os.getenv('GEMINI_TIMEOUT_SECONDS', '20')),
+            max_output_tokens=int(os.getenv('GEMINI_MAX_OUTPUT_TOKENS', '1200')),
+            temperature=float(os.getenv('GEMINI_TEMPERATURE', '0.7')),
+        )
+        seed = client.generate_campaign_seed(setup=setup, character=character)
+    except (ValueError, GeminiMJError) as exc:
+        logger.warning('DYNAMIC_CAMPAIGN_SEED_FAILED error_type=%s', type(exc).__name__)
+        raise HTTPException(status_code=503, detail='dynamic campaign proposal is unavailable') from exc
+    return build_dynamic_state(character=character, setup=setup, seed=seed)
+
+
 @app.post('/v2/character/validate')
 def validate_phb2024_character(body: PHB2024GuidedCharacterRequest, x_api_key: str | None = Header(default=None)):
     authorize(x_api_key)
+    if getattr(body, 'campaign_setup', None) is not None:
+        preview, _state = _phb2024_character_preview(body)
+        return preview
+    try:
+        get_adventure(getattr(body, 'adventure_id', REDWOOD_ADVENTURE_ID))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail='adventure is not available in the server-owned catalog') from exc
     preview, _state = _phb2024_character_preview(body)
     return preview
 
@@ -634,10 +827,37 @@ def create_phb2024_character(
     idempotency_key: str = Header(alias='Idempotency-Key'),
 ):
     authorize(x_api_key)
+    if getattr(body, 'campaign_setup', None) is not None:
+        preview, character_state = _phb2024_character_preview(body)
+        state = _dynamic_campaign_state(body, preview['character'])
+        state['character'] = character_state['character']
+        try:
+            return get_campaign_store().create_campaign(
+                state=state,
+                creation_response=preview,
+                request_payload=body.model_dump(mode='json'),
+                idempotency_key=idempotency_key,
+                session_token=x_session_token,
+                ruleset='dnd-2024-phb',
+            )
+        except (
+            IdempotencyConflict,
+            PersistenceNotConfigured,
+            PersistenceUnavailable,
+            SessionUnauthorized,
+        ) as exc:
+            raise_campaign_http_error(exc)
+    try:
+        adventure = get_adventure(getattr(body, 'adventure_id', REDWOOD_ADVENTURE_ID))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail='adventure is not available in the server-owned catalog') from exc
     preview, state = _phb2024_character_preview(body)
     character_id = preview['character']['id']
-    scene = _initial_scene(character_id)
+    if adventure['id'] != REDWOOD_ADVENTURE_ID:
+        raise HTTPException(status_code=422, detail='adventure bootstrap is not implemented')
+    scene = _redwood_watch_scene(character_id)
     state['scene'] = scene
+    state['adventure'] = _adventure_state(adventure, scene)
     state['encounter'] = _initial_encounter()
     try:
         return get_campaign_store().create_campaign(
@@ -657,12 +877,108 @@ def create_phb2024_character(
         raise_campaign_http_error(exc)
 
 
+def resolve_adventure_action(body: ResolveRequest) -> dict[str, Any]:
+    """Resolve a bounded, non-dice adventure transition from server state."""
+    action = body.action
+    if not isinstance(action, AdventureAction):
+        raise TypeError('resolve_adventure_action requires an adventure action')
+    scene = body.state.get('scene')
+    if not isinstance(scene, dict) or scene.get('id') != REDWOOD_GROVE_SCENE_ID:
+        raise ValueError('adventure action is unavailable in this scene')
+
+    authorized = [
+        candidate for candidate in scene.get('available_actions', [])
+        if isinstance(candidate, dict)
+        and candidate.get('type') == 'adventure_action'
+        and candidate.get('intent') == action.intent
+        and (action.intent == 'show_respect_to_kaynen' or candidate.get('tree_id') == action.tree_id)
+    ]
+    if len(authorized) != 1:
+        raise ValueError('adventure action is not authorized by the current snapshot')
+
+    adventure = body.state.setdefault('adventure', {})
+    if action.intent == 'show_respect_to_kaynen':
+        if adventure.get('kaynen_attitude') == 'indifferent':
+            raise ValueError('respect was already shown to Kaynen')
+        adventure['kaynen_attitude'] = 'indifferent'
+        scene['available_actions'] = [
+            {
+                'type': 'skill_check',
+                'skill': 'persuasion',
+                'dc': 12,
+                'character_id': body.state.get('character', {}).get('id'),
+                'label': 'Pedir a ajuda de Kaynen',
+                'description': 'Peça a Kaynen que ajude a investigar a corrupção da floresta.',
+                'player_input': 'Peço a ajuda de Kaynen para investigar a corrupção da floresta.',
+            },
+            {
+                'type': 'skill_check',
+                'skill': 'perception',
+                'dc': 14,
+                'character_id': body.state.get('character', {}).get('id'),
+                'label': 'Examinar a entrada da toca',
+                'description': 'Procure pegadas próximas à entrada da toca sem presumir o que elas revelam.',
+                'player_input': 'Procuro pegadas próximas à entrada da toca.',
+            },
+        ]
+        return {
+            'schema_version': RULE_RESOLUTION_SCHEMA_VERSION,
+            'status': 'resolved',
+            'action': {'type': action.type, 'intent': action.intent},
+            'check': {},
+            'rolls': [],
+            'outcome': {
+                'state_changed': True,
+                'kaynen_attitude': 'indifferent',
+                'narrative_facts': [{'id': 'kaynen-request-respected'}],
+            },
+            'rules_used': ['dragon-delves.redwood-grove.kaynen-respect.v1'],
+        }
+    samples = adventure.setdefault('redwood_samples', [])
+    if adventure.get('kaynen_attitude') != 'friendly':
+        raise ValueError('Kaynen must be friendly before collecting a bark sample')
+    if action.tree_id in samples:
+        raise ValueError('redwood sample was already collected')
+    samples.append(action.tree_id)
+    scene['available_actions'] = [
+        candidate for candidate in scene.get('available_actions', [])
+        if not (
+            isinstance(candidate, dict)
+            and candidate.get('type') == 'adventure_action'
+            and candidate.get('intent') == action.intent
+            and candidate.get('tree_id') == action.tree_id
+        )
+    ]
+    return {
+        'schema_version': RULE_RESOLUTION_SCHEMA_VERSION,
+        'status': 'resolved',
+        'action': {
+            'type': action.type,
+            'intent': action.intent,
+            'tree_id': action.tree_id,
+        },
+        'check': {},
+        'rolls': [],
+        'outcome': {
+            'state_changed': True,
+            'sample_collected': True,
+            'narrative_facts': [
+                {'id': 'redwood-bark-sample-collected', 'tree_id': action.tree_id},
+            ],
+        },
+        'rules_used': ['dragon-delves.redwood-grove.adventure-action.v1'],
+    }
+
+
 def resolve_game_action(action: dict[str, Any], state: dict[str, Any]) -> dict[str, Any]:
     """Validate and resolve a structured action using the existing Rule Engine."""
+    scene_transitioned = False
     mechanical_action = {
         key: value for key, value in action.items()
         if key not in ACTION_PRESENTATION_FIELDS
     }
+    if mechanical_action.get('type') in {'skill_check', 'ability_check'} and 'dc' not in mechanical_action:
+        raise ValueError('resolution requires a server-authorized DC')
     if mechanical_action.get('type') == 'attack':
         actor_id = mechanical_action.get('actor_id')
         target_id = mechanical_action.get('target_id')
@@ -738,6 +1054,26 @@ def resolve_game_action(action: dict[str, Any], state: dict[str, Any]) -> dict[s
     state.update(body.state)
     scene = state.get('scene')
     combat = state.get('combat')
+    adventure = state.get('adventure')
+    if (
+        mechanical_action.get('type') == 'skill_check'
+        and mechanical_action.get('skill') == 'persuasion'
+        and resolution.get('outcome', {}).get('success') is True
+        and isinstance(adventure, dict)
+        and adventure.get('id') == REDWOOD_ADVENTURE_ID
+        and adventure.get('scene_id') == 'redwood-watch'
+        and isinstance(state.get('character'), dict)
+    ):
+        next_scene = _redwood_grove_scene(state['character']['id'])
+        state['scene'] = next_scene
+        adventure['scene_id'] = next_scene['id']
+        adventure['kaynen_attitude'] = 'hostile'
+        resolution.setdefault('outcome', {})['scene_transition'] = {
+            'from': 'redwood-watch',
+            'to': REDWOOD_GROVE_SCENE_ID,
+        }
+        scene = next_scene
+        scene_transitioned = True
     if (
         mechanical_action.get('type') == 'skill_check'
         and mechanical_action.get('skill') == 'perception'
@@ -768,6 +1104,53 @@ def resolve_game_action(action: dict[str, Any], state: dict[str, Any]) -> dict[s
             'description': 'Explore a pista, presença ou anomalia que mais chamou sua atenção.',
             'player_input': 'Investigo a pista que mais chamou minha atenção.',
         }]
+    if (
+        mechanical_action.get('type') == 'skill_check'
+        and mechanical_action.get('skill') == 'perception'
+        and isinstance(scene, dict)
+        and scene.get('id') == REDWOOD_GROVE_SCENE_ID
+    ):
+        outcome = resolution.setdefault('outcome', {})
+        if outcome.get('success') is True:
+            fact = {'id': 'redwood-grove-armin-tracks', 'location': 'redwood-grove-r4'}
+            adventure = state.setdefault('adventure', {})
+            discoveries = adventure.setdefault('discoveries', [])
+            if fact not in discoveries:
+                discoveries.append(fact)
+            outcome['narrative_facts'] = [fact]
+        else:
+            outcome['narrative_facts'] = []
+    if (
+        mechanical_action.get('type') == 'skill_check'
+        and mechanical_action.get('skill') == 'persuasion'
+        and resolution.get('outcome', {}).get('success') is True
+        and isinstance(scene, dict)
+        and scene.get('id') == REDWOOD_GROVE_SCENE_ID
+        and not scene_transitioned
+    ):
+        adventure = state.setdefault('adventure', {})
+        adventure['kaynen_attitude'] = 'friendly'
+        scene['available_actions'] = [
+            {
+                'type': 'adventure_action',
+                'intent': 'collect_bark_sample',
+                'tree_id': 'r3',
+                'label': 'Coletar amostra da árvore',
+                'description': 'Kaynen permite que você colha uma amostra da casca da árvore.',
+                'player_input': 'Coleto uma amostra da casca desta árvore.',
+            },
+            *[
+                candidate for candidate in scene.get('available_actions', [])
+                if isinstance(candidate, dict)
+                and not (
+                    candidate.get('type') == 'skill_check'
+                    and candidate.get('skill') == 'persuasion'
+                )
+            ],
+        ]
+        resolution.setdefault('outcome', {})['narrative_facts'] = [
+            {'id': 'kaynen-became-friendly'},
+        ]
     return resolution
 
 
@@ -800,25 +1183,25 @@ def _validate_snapshot_action(action: dict[str, Any] | None, state: dict[str, An
 
 
 def build_game_orchestrator() -> GameOrchestrator:
-    if not GROQ_API_KEY or not GROQ_MODEL or not GROQ_BASE_URL:
-        logger.warning("NARRATOR_CONFIGURATION_MISSING fallback=local")
+    if not GEMINI_API_KEY or not GEMINI_MODEL or not GEMINI_BASE_URL:
+        logger.warning("GEMINI_CONFIGURATION_MISSING fallback=local")
         return GameOrchestrator(UnavailableNarratorProvider(), resolve_action=resolve_game_action)
     try:
-        timeout = float(os.getenv('GROQ_TIMEOUT_SECONDS', '20'))
-        max_output_tokens = int(os.getenv('GROQ_MAX_OUTPUT_TOKENS', '512'))
-        temperature = float(os.getenv('GROQ_TEMPERATURE', '0.7'))
-        narrator = GroqNarratorClient(
-            api_key=GROQ_API_KEY,
-            model=GROQ_MODEL,
-            base_url=GROQ_BASE_URL,
+        timeout = float(os.getenv('GEMINI_TIMEOUT_SECONDS', '20'))
+        max_output_tokens = int(os.getenv('GEMINI_MAX_OUTPUT_TOKENS', '512'))
+        temperature = float(os.getenv('GEMINI_TEMPERATURE', '0.7'))
+        gemini = GeminiMJClient(
+            api_key=GEMINI_API_KEY,
+            model=GEMINI_MODEL,
+            base_url=GEMINI_BASE_URL,
             timeout_seconds=timeout,
             max_output_tokens=max_output_tokens,
             temperature=temperature,
         )
     except ValueError as exc:
-        logger.warning("NARRATOR_CONFIGURATION_INVALID error_type=%s fallback=local", type(exc).__name__)
-        narrator = UnavailableNarratorProvider()
-    return GameOrchestrator(narrator, resolve_action=resolve_game_action)
+        logger.warning("GEMINI_CONFIGURATION_INVALID error_type=%s fallback=local", type(exc).__name__)
+        return GameOrchestrator(UnavailableNarratorProvider(), resolve_action=resolve_game_action)
+    return GameOrchestrator(gemini, resolve_action=resolve_game_action, interpret_intent=gemini.interpret)
 
 
 @app.get('/v1/sessions/{session_id}', response_model=SessionResumeResponse)
@@ -1346,11 +1729,17 @@ def _sync_class_resources(character_state: dict[str, Any], character: Character)
     resources = character_state.setdefault('resources', {})
     if not isinstance(resources, dict):
         raise ValueError('resources must be an object')
-    resource_ids = ['second_wind']
-    if character.level >= 2:
-        resource_ids.append('action_surge')
+    resource_ids = class_resource_ids(character.class_.id, character.level)
     for resource_id in resource_ids:
-        maximum = class_resource_maximum(character.class_.id, resource_id, character.level)
+        ability_modifier = None
+        if resource_id == 'bardic_inspiration':
+            ability_modifier = character.abilities['charisma'] // 2 - 5
+        maximum = class_resource_maximum(
+            character.class_.id,
+            resource_id,
+            character.level,
+            ability_modifier=ability_modifier,
+        )
         recovery = class_resource_recovery(character.class_.id, resource_id)
         recovery_amount = class_resource_recovery_amount(character.class_.id, resource_id)
         existing = resources.get(resource_id)
@@ -1370,6 +1759,23 @@ def _sync_class_resources(character_state: dict[str, Any], character: Character)
             'maximum': maximum,
             'recovery': recovery,
             **({'recovery_amount': recovery_amount} if recovery_amount is not None else {}),
+        }
+    spellcasting = class_spellcasting(character.class_.id, character.level)
+    if spellcasting is not None:
+        existing_spellcasting = character_state.get('spellcasting', {})
+        existing_prepared = existing_spellcasting.get('spells_prepared', []) if isinstance(existing_spellcasting, dict) else []
+        if not isinstance(existing_prepared, list):
+            raise ValueError('spells_prepared must be a list')
+        prepared_spells = list(existing_prepared)
+        for spell_id in subclass_prepared_spells(character.class_.id, character.subclass_id, character.level):
+            if spell_id not in prepared_spells:
+                prepared_spells.append(spell_id)
+        character_state['spellcasting'] = {
+            'ability': class_definition(character.class_.id).get('spellcasting_ability'),
+            'cantrips_known': existing_spellcasting.get('cantrips_known', []) if isinstance(existing_spellcasting, dict) else [],
+            'spells_known': existing_spellcasting.get('spells_known', []) if isinstance(existing_spellcasting, dict) else [],
+            'spells_prepared': prepared_spells,
+            'spell_slots': {str(level): count for level, count in spellcasting['slots'].items()},
         }
 
 
@@ -1407,6 +1813,145 @@ def resolve_level_up(body: ResolveRequest) -> dict[str, Any]:
             'class_features': list(updated.class_features),
             'resources': updated.resources,
         },
+    )
+
+
+def resolve_select_subclass(body: ResolveRequest) -> dict[str, Any]:
+    action = body.action
+    if not isinstance(action, SelectSubclassAction):
+        raise TypeError('resolve_select_subclass requires a validated action')
+    character_state = _mutable_character_state(body.state, action.character_id)
+    character = Character.model_validate(character_state)
+    if character.level < 3:
+        raise ValueError('subclass selection is not available before level 3')
+    if character.subclass_id is not None:
+        raise ValueError('subclass is already selected')
+    record = CANONICAL_CATALOG.get('subclass', action.subclass_id)
+    if record.data.get('class_id') != character.class_.id:
+        raise ValueError('subclass does not belong to the selected class')
+    if action.subclass_id not in class_subclass_options(character.class_.id):
+        raise ValueError('subclass is not an option of the selected PHB 2024 class')
+    character_state['subclass_id'] = action.subclass_id
+    updated = Character.model_validate(character_state)
+    return _character_resolution(
+        {'type': action.type, 'character_id': updated.id, 'subclass_id': action.subclass_id},
+        {'character_id': updated.id, 'subclass_id': updated.subclass_id, 'class_id': updated.class_.id, 'level': updated.level},
+    )
+
+
+def resolve_concentration_check_action(
+    body: ResolveRequest,
+    *,
+    randbelow: Callable[[int], int] | None = None,
+) -> dict[str, Any]:
+    action = body.action
+    if not isinstance(action, ConcentrationCheckAction):
+        raise TypeError('resolve_concentration_check_action requires a validated action')
+    character_state = _mutable_character_state(body.state, action.character_id)
+    character, derived = derive_character(character_state)
+    saves = character.proficiencies.saving_throws
+    result = resolve_concentration_check(
+        character_state,
+        damage=action.damage,
+        constitution_modifier=derived['ability_modifiers']['constitution'],
+        proficient=bool(saves.get('constitution', False)),
+        randbelow=randbelow,
+    )
+    return _character_resolution(
+        {'type': action.type, 'character_id': character.id},
+        result,
+    )
+
+
+def resolve_complex_saving_throw_action(
+    body: ResolveRequest,
+    *,
+    randbelow: Callable[[int], int] | None = None,
+) -> dict[str, Any]:
+    action = body.action
+    if not isinstance(action, ComplexSavingThrowAction):
+        raise TypeError('resolve_complex_saving_throw_action requires a validated action')
+    result = resolve_complex_saving_throw(
+        modifier=action.modifier,
+        dc=action.dc,
+        ability=action.ability,
+        damage_dice=action.damage_dice,
+        damage_modifier=action.damage_modifier,
+        half_on_success=action.half_on_success,
+        condition_on_failure=action.condition_on_failure,
+        condition_duration=action.condition_duration,
+        advantage=action.advantage,
+        disadvantage=action.disadvantage,
+        randbelow=randbelow,
+    )
+    return _combat_resolution(
+        {'type': action.type, 'ability': action.ability},
+        check={'dc': action.dc, 'modifier': action.modifier},
+        rolls=result.pop('rolls'),
+        outcome=result,
+        rules_used=result.pop('rules_used'),
+    )
+
+
+def resolve_reaction_action(body: ResolveRequest) -> dict[str, Any]:
+    action = body.action
+    if not isinstance(action, ResolveReactionAction):
+        raise TypeError('resolve_reaction_action requires a validated action')
+    combat = _require_combat(body.state)
+    actor = combat['combatants'].get(action.actor_id)
+    if not isinstance(actor, dict):
+        raise ValueError('reaction actor does not exist')
+    if actor.get('unconscious'):
+        raise ValueError('unconscious actor cannot use reaction')
+    if not actor.get('reaction_available'):
+        raise ValueError('BLOCKED_ACTION')
+    window = consume_reaction_window(combat, action.window_id, action.actor_id)
+    actor['reaction_available'] = False
+    return _combat_resolution(
+        {'type': action.type, 'actor_id': action.actor_id, 'window_id': action.window_id},
+        check={'trigger': window['trigger']},
+        rolls=[],
+        outcome={'reaction_consumed': True, 'window': window},
+        rules_used=['combat.reaction.phb2024.v1'],
+    )
+
+
+def resolve_subclass_feature_action(
+    body: ResolveRequest,
+    *,
+    randbelow: Callable[[int], int] | None = None,
+) -> dict[str, Any]:
+    action = body.action
+    if not isinstance(action, SubclassFeatureAction):
+        raise TypeError('resolve_subclass_feature_action requires a validated action')
+    combat = body.state.get('combat')
+    actor = None
+    target = None
+    if isinstance(combat, dict) and isinstance(combat.get('combatants'), dict):
+        actor = combat['combatants'].get(action.actor_id)
+        if actor is not None and action.target_id is not None:
+            target = combat['combatants'].get(action.target_id)
+    if isinstance(actor, dict):
+        character_state = actor.get('character')
+    else:
+        character_state = _mutable_character_state(body.state, action.actor_id)
+    if not isinstance(character_state, dict):
+        raise ValueError('subclass feature actor character not found')
+    if action.target_id is not None and target is None:
+        raise ValueError('subclass feature target not found')
+    target_state = (target or {}).get('character') if isinstance(target, dict) else None
+    if target_state is None:
+        target_state = character_state
+    outcome = resolve_subclass_feature(
+        character_state,
+        feature_id=action.feature_id,
+        mode=action.mode,
+        target=target_state,
+        randbelow=randbelow,
+    )
+    return _character_resolution(
+        {'type': action.type, 'actor_id': action.actor_id, 'feature_id': action.feature_id},
+        outcome,
     )
 
 
@@ -1792,7 +2337,33 @@ def _resolve_single_combat_attack(
     )
     hp_before = target['hp']
     damage_result = resolution['outcome']['damage']
+    concentration_result = None
+    reaction_window = None
     if resolution['outcome']['hit'] and damage_result is not None:
+        target_character_state = target.get('character')
+        if isinstance(target_character_state, dict) and damage_result > 0:
+            target_character, target_derived = derive_character(target_character_state)
+            concentration_result = resolve_concentration_check(
+                target_character_state,
+                damage=damage_result,
+                constitution_modifier=target_derived['ability_modifiers']['constitution'],
+                proficient=bool(target_character.proficiencies.saving_throws.get('constitution', False)),
+                randbelow=randbelow,
+            )
+            if concentration_result.get('checked'):
+                resolution['rules_used'].append('spell.concentration.phb2024.v1')
+            if (
+                target.get('reaction_available')
+                and target_character.subclass_id == 'archfey_patron'
+                and target_character.level >= 6
+            ):
+                reaction_window = open_reaction_window(
+                    combat,
+                    trigger='creature_hit_by_attack',
+                    triggering_actor_id=action.actor_id or '',
+                    target_actor_id=action.target_id or '',
+                    payload={'feature_id': 'misty_escape', 'damage': damage_result},
+                )
         target['hp'] = max(0, target['hp'] - damage_result)
         target['unconscious'] = target['hp'] == 0
     resolution['action'] = {'type': 'attack', 'actor_id': action.actor_id, 'target_id': action.target_id}
@@ -1804,6 +2375,8 @@ def _resolve_single_combat_attack(
         'target_hp_before': hp_before,
         'target_hp_after': target['hp'],
         'target_unconscious': target['unconscious'],
+        'concentration': concentration_result,
+        'reaction_window': reaction_window,
     })
     return resolution
 
@@ -1973,6 +2546,8 @@ def resolve_request(
             return resolve_create_character(body)
         if isinstance(body.action, SkillCheckAction):
             return resolve_skill_check(body, randbelow=randbelow)
+        if isinstance(body.action, AdventureAction):
+            return resolve_adventure_action(body)
         if isinstance(body.action, StartCombatAction):
             return resolve_start_combat(body, randbelow=randbelow)
         if isinstance(body.action, MoveAction):
@@ -1987,6 +2562,10 @@ def resolve_request(
             return resolve_add_experience(body)
         if isinstance(body.action, LevelUpAction):
             return resolve_level_up(body)
+        if isinstance(body.action, SelectSubclassAction):
+            return resolve_select_subclass(body)
+        if isinstance(body.action, SubclassFeatureAction):
+            return resolve_subclass_feature_action(body, randbelow=randbelow)
         if isinstance(body.action, SecondWindAction):
             return resolve_second_wind(body, randbelow=randbelow)
         if isinstance(body.action, ActionSurgeAction):
@@ -1997,6 +2576,12 @@ def resolve_request(
             return resolve_explicit_action(body, randbelow=randbelow)
         if isinstance(body.action, SavingThrowAction):
             return resolve_saving_throw(body, randbelow=randbelow)
+        if isinstance(body.action, ComplexSavingThrowAction):
+            return resolve_complex_saving_throw_action(body, randbelow=randbelow)
+        if isinstance(body.action, ConcentrationCheckAction):
+            return resolve_concentration_check_action(body, randbelow=randbelow)
+        if isinstance(body.action, ResolveReactionAction):
+            return resolve_reaction_action(body)
         if isinstance(body.action, AttackAction):
             if body.action.actor_id is not None:
                 return resolve_combat_attack(body, randbelow=randbelow)
